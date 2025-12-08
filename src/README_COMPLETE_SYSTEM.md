@@ -2,7 +2,7 @@
 
 **Version:** 2.0  
 **Status:** Production Ready  
-**Last Updated:** December 6, 2025
+**Last Updated:** December 8, 2025
 
 ---
 
@@ -179,50 +179,54 @@ python run.py
 ```
 quiz-management-system/
 │
-├── frontend/                    # React frontend
+├── src/
 │   ├── components/
-│   │   ├── admin/              # Admin components
-│   │   ├── teacher/            # Teacher components
-│   │   │   ├── AttemptReset.tsx        ⭐ NEW
-│   │   │   └── SubmissionManager.tsx   ⭐ NEW
-│   │   ├── student/            # Student components
-│   │   ├── shared/             # Shared components
-│   │   │   └── NotificationCenter.tsx  ⭐ NEW
-│   │   └── ui/                 # UI components
-│   ├── lib/
-│   │   ├── mockData.ts
-│   │   └── api.ts              ⭐ NEW (create this)
-│   └── styles/
+│   │   ├── admin/              # Admin-specific components
+│   │   │   ├── AdminDashboard.tsx
+│   │   │   └── AdminUsers.tsx
+│   │   ├── auth/               # Authentication components
+│   │   │   ├── Login.tsx
+│   │   │   └── ForgotPassword.tsx
+│   │   ├── shared/             # Components shared across roles
+│   │   │   ├── DashboardLayout.tsx
+│   │   │   └── NotificationCenter.tsx
+│   │   ├── student/            # Student-specific components
+│   │   │   ├── StudentDashboard.tsx
+│   │   │   └── QuizTaking.tsx
+│   │   ├── teacher/            # Teacher-specific components
+│   │   │   ├── TeacherDashboard.tsx
+│   │   │   ├── QuizBuilder.tsx
+│   │   │   └── GradingInterface.tsx
+│   │   └── ui/                 # Shadcn UI components
+│   ├── contexts/               # React Context providers
+│   ├── lib/                    # Utility functions & API client
+│   └── styles/                 # Global CSS
 │
-├── backend/                     # Choose one backend
-│   ├── fastapi-backend/        # Option A
-│   │   ├── app/
-│   │   │   ├── api/
-│   │   │   ├── models/
-│   │   │   ├── schemas/
-│   │   │   └── services/
-│   │   │       ├── notification_service.py     ⭐ NEW
-│   │   │       └── attempt_reset_service.py    ⭐ NEW
-│   │   └── requirements.txt
-│   │
-│   └── flask-backend/          # Option B
-│       ├── app/
-│       │   ├── routes/
-│       │   │   ├── notifications.py            ⭐ NEW
-│       │   │   └── attempts.py                 ⭐ UPDATED
-│       │   ├── models/
-│       │   └── services/
-│       │       ├── notification_service.py     ⭐ NEW
-│       │       └── attempt_reset_service.py    ⭐ NEW
-│       └── requirements.txt
+├── backend/
+│   ├── app/
+│   │   ├── models/             # SQLAlchemy database models
+│   │   │   ├── user.py
+│   │   │   ├── quiz.py
+│   │   │   ├── question.py
+│   │   │   └── ... (other models)
+│   │   ├── routes/             # Flask API routes
+│   │   │   ├── auth.py
+│   │   │   ├── admin.py
+│   │   │   ├── teacher.py
+│   │   │   └── student.py
+│   │   ├── services/           # Business logic services
+│   │   │   ├── notification_service.py
+│   │   │   └── attempt_reset_service.py
+│   │   └── utils/              # Helper utilities
+│   │       └── decorators.py
+│   ├── migrations/             # Alembic database migrations
+│   ├── requirements.txt        # Python dependencies
+│   └── run.py                  # Flask application entry point
 │
-└── docs/                       # Documentation
-    ├── README_COMPLETE_SYSTEM.md         ⭐ THIS FILE
-    ├── INTEGRATION_GUIDE.md              ⭐ START HERE
-    ├── FINAL_SYSTEM_COMPLETE.md          ⭐ FEATURE LIST
-    ├── PYTHON_BACKEND_GUIDE.md           # FastAPI guide
-    ├── FLASK_MYSQL_BACKEND_GUIDE.md      # Flask guide
-    └── BACKEND_UPDATES_NOTIFICATIONS_ATTEMPTS.md  ⭐ NEW FEATURES
+├── public/                     # Static assets
+├── README.md                   # Main project README
+├── package.json                # Frontend dependencies
+└── vite.config.ts              # Vite build configuration
 ```
 
 ---
@@ -238,15 +242,7 @@ quiz-management-system/
 - **Notifications:** Sonner
 - **State:** React Hooks (useState, useEffect)
 
-### Backend Option A (FastAPI)
-- **Framework:** FastAPI 0.109
-- **Database:** PostgreSQL 15+
-- **ORM:** SQLAlchemy 2.0
-- **Auth:** JWT (python-jose)
-- **Real-time:** WebSockets
-- **Migration:** Alembic
-
-### Backend Option B (Flask)
+### Backend (Flask)
 - **Framework:** Flask 3.0
 - **Database:** MySQL 8.0+
 - **ORM:** Flask-SQLAlchemy
@@ -597,6 +593,12 @@ python run.py
 ---
 
 ## 📅 Version History
+
+### Version 2.1 (December 8, 2025)
+- 📝 Updated main README.md with accurate project information
+- 📝 Updated version dates across documentation
+- 📝 Improved project structure documentation
+- 📝 Enhanced quick start instructions
 
 ### Version 2.0 (December 6, 2025)
 - ✨ Added notification system

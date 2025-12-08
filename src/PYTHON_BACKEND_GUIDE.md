@@ -1,7 +1,7 @@
 # Python Backend Development Guide for Quiz Management System
 
-**Version:** 1.0  
-**Date:** December 6, 2025  
+**Version:** 2.1  
+**Date:** December 8, 2025  
 **Framework:** FastAPI (Recommended) or Django REST Framework
 
 ---

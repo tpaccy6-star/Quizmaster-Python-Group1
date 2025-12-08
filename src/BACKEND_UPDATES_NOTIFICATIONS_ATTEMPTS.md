@@ -1,7 +1,7 @@
 # Backend Updates: Notification System & Attempt Reset
 
-**Date:** December 6, 2025  
-**Version:** 2.0
+**Date:** December 8, 2025  
+**Version:** 2.1
 
 This document outlines the additional features for both FastAPI and Flask backends:
 1. **Comprehensive Notification System**

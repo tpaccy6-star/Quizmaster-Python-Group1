@@ -1,7 +1,7 @@
 # Python Backend Development Guide - Flask + MySQL
 
-**Version:** 1.0  
-**Date:** December 6, 2025  
+**Version:** 2.1  
+**Date:** December 8, 2025  
 **Framework:** Flask  
 **Database:** MySQL 8.0+
 
