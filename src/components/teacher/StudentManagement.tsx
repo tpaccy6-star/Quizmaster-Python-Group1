@@ -2,7 +2,8 @@ import { useState } from 'react';
 import DashboardLayout from '../shared/DashboardLayout';
 import { useAuth } from '../../contexts/AuthContext';
 import { Upload, Users, Search, Printer } from 'lucide-react';
-import { students, teachers, classes } from '../../lib/mockData';
+import { apiService } from '../../lib/api';
+import { useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import {
@@ -22,26 +23,36 @@ export default function StudentManagement() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [students, setStudents] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Get teacher's assigned classes
-  const teacher = teachers.find(t => t.id === user.id);
-  const teacherClasses = teacher
-    ? classes.filter(c => teacher.classIds.includes(c.id))
-    : [];
-
-  // Filter students by teacher's classes
-  const teacherStudents = students.filter(s =>
-    teacher?.classIds.includes(s.classId)
-  );
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [studentsRes, classesRes] = await Promise.all([
+          apiService.getTeacherStudents(),
+          apiService.getTeacherClasses(),
+        ]);
+        setStudents(Array.isArray((studentsRes as any).students) ? (studentsRes as any).students : []);
+        setClasses(Array.isArray((classesRes as any).classes) ? (classesRes as any).classes : []);
+      } catch (error) {
+        console.error('Failed to fetch data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Apply search and class filter
-  const filteredStudents = teacherStudents.filter(s => {
+  const filteredStudents = students.filter((s: any) => {
     const matchesSearch =
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.registrationNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      s.registration_number.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesClass = selectedClass === 'all' || s.classId === selectedClass;
+    const matchesClass = selectedClass === 'all' || s.class_id === selectedClass;
 
     return matchesSearch && matchesClass;
   });
@@ -82,9 +93,9 @@ export default function StudentManagement() {
                 <tr>
                   <td>${idx + 1}</td>
                   <td>${s.name}</td>
-                  <td>${s.registrationNumber}</td>
+                  <td>${s.registration_number}</td>
                   <td>${s.email}</td>
-                  <td>${s.className}</td>
+                  <td>${classes.find(c => c.id === s.class_id)?.name || 'N/A'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -120,11 +131,11 @@ export default function StudentManagement() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-card rounded-lg p-4 border">
             <div className="text-muted-foreground text-sm">Your Classes</div>
-            <div className="text-2xl mt-1">{teacherClasses.length}</div>
+            <div className="text-2xl mt-1">{classes.length}</div>
           </div>
           <div className="bg-card rounded-lg p-4 border">
             <div className="text-muted-foreground text-sm">Total Students</div>
-            <div className="text-2xl mt-1">{teacherStudents.length}</div>
+            <div className="text-2xl mt-1">{students.length}</div>
           </div>
           <div className="bg-card rounded-lg p-4 border">
             <div className="text-muted-foreground text-sm">Filtered Results</div>
@@ -149,7 +160,7 @@ export default function StudentManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Classes</SelectItem>
-              {teacherClasses.map(cls => (
+              {classes.map((cls: any) => (
                 <SelectItem key={cls.id} value={cls.id}>
                   {cls.name}
                 </SelectItem>
@@ -174,15 +185,15 @@ export default function StudentManagement() {
                 filteredStudents.map((student) => (
                   <tr key={student.id}>
                     <td className="px-6 py-4 text-sm">{student.name}</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">{student.registrationNumber}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{student.registration_number}</td>
                     <td className="px-6 py-4 text-sm text-muted-foreground">{student.email}</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">{student.className}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{classes.find(c => c.id === student.class_id)?.name || 'N/A'}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                    {teacherStudents.length === 0
+                    {students.length === 0
                       ? 'No students assigned to your classes yet'
                       : 'No students match your search criteria'
                     }

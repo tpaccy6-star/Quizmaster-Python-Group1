@@ -56,14 +56,19 @@ export default function Profile() {
 
     try {
       // Update user profile via API
-      await apiService.updateUser(user.id, {
+      await apiService.updateUserProfile({
         name: editedName,
         email: editedEmail
       });
 
-      // Update current user in auth context would happen here
+      // Update local user data in auth context
+      const updatedUser = { ...user, name: editedName, email: editedEmail };
+      // Note: You'll need to implement setUser in AuthContext
       setIsEditing(false);
       toast.success('Profile updated successfully');
+
+      // Optionally refresh user data
+      window.location.reload();
     } catch (error) {
       console.error('Failed to update profile:', error);
       toast.error('Failed to update profile');

@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import jsonify, current_app
+from flask import jsonify, current_app, request
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity, get_jwt
 from app.models.user import User, UserRole
 
@@ -10,6 +10,8 @@ def jwt_required_with_role():
         @wraps(f)
         def decorated_function(*args, **kwargs):
             try:
+                if request.method == 'OPTIONS':
+                    return '', 204
                 verify_jwt_in_request()
                 user_id = get_jwt_identity()
                 current_user = User.query.get(user_id)

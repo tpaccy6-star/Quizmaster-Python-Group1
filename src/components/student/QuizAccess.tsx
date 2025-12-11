@@ -18,7 +18,9 @@ export default function QuizAccess() {
   const navigate = useNavigate();
 
   const handleAccessQuiz = async () => {
-    if (!accessCode.trim()) {
+    const normalizedCode = accessCode.trim().toUpperCase();
+
+    if (!normalizedCode) {
       setError('Please enter an access code');
       return;
     }
@@ -27,27 +29,17 @@ export default function QuizAccess() {
     setError('');
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/quizzes/access/${accessCode.trim()}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
+      const response = await apiService.accessQuizByCode(normalizedCode);
+      const responseData = response as any;
 
-      if (response.ok) {
-        const result = await response.json();
-        const quiz = result.data;
-        // Check if quiz is active and student is eligible
-        if (quiz.status === 'published') {
-          navigate(`/student/quiz/${quiz.id}`, { state: { quiz } });
-        } else {
-          setError('This quiz is not currently available');
-        }
+      if (responseData.quiz) {
+        // Navigate to quiz taking with the attempt ID
+        navigate(`/student/quiz-taking/${responseData.attempt_id}`);
       } else {
-        setError('Invalid access code');
+        setError('Quiz not found or access code is invalid');
       }
-    } catch (error) {
-      setError('Failed to access quiz. Please try again.');
+    } catch (error: any) {
+      setError(error.message || 'Failed to access quiz');
     } finally {
       setLoading(false);
     }
@@ -80,7 +72,7 @@ export default function QuizAccess() {
               <input
                 type="text"
                 value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
+                onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center text-2xl tracking-widest uppercase"
                 placeholder="ENTER CODE"
                 required

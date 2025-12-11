@@ -1,10 +1,11 @@
 from flask import Blueprint, request, jsonify
 from app.utils.decorators import teacher_required
-from app.models.quiz import Quiz
+from app.models.quiz import Quiz, generate_access_code
 from app.models.student import Student
 from app.models.class_model import Class
 from app.models.quiz_attempt import QuizAttempt, AttemptStatus
 from app.models.teacher import Teacher
+from app.services.notification_service import NotificationService
 from app import db
 
 teacher_bp = Blueprint('teacher', __name__)
@@ -136,4 +137,49 @@ def get_pending_grading(current_user):
         'total': pending_attempts.total,
         'pages': pending_attempts.pages,
         'current_page': page
+    }), 200
+
+
+@teacher_bp.route('/quizzes/<quiz_id>/access-code', methods=['POST'])
+@teacher_required
+def regenerate_access_code(current_user, quiz_id):
+    """Regenerate a quiz access code and notify assigned students."""
+    quiz = Quiz.query.get(quiz_id)
+
+    if not quiz:
+        return jsonify({'error': 'Quiz not found'}), 404
+
+    if quiz.created_by != current_user.id:
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Generate a unique code with a few retries
+    new_code = None
+    for _ in range(10):
+        candidate = generate_access_code()
+        if not Quiz.query.filter_by(access_code=candidate).first():
+            new_code = candidate
+            break
+
+    if not new_code:
+        return jsonify({'error': 'Failed to generate unique access code'}), 500
+
+    quiz.access_code = new_code
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to update access code', 'details': str(e)}), 500
+
+    class_ids = [c.id for c in quiz.classes]
+    NotificationService.notify_quiz_access_code(
+        quiz_title=quiz.title,
+        access_code=new_code,
+        class_ids=class_ids
+    )
+
+    return jsonify({
+        'message': 'New access code generated successfully',
+        'access_code': new_code,
+        'quiz': quiz.to_dict(include_classes=True)
     }), 200

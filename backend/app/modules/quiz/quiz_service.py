@@ -60,7 +60,7 @@ class QuizService:
             raise ValueError('Unauthorized to update this quiz')
 
         # Update fields
-        updatable_fields = ['title', 'subject', 'description', 'time_limit_minutes',
+        updatable_fields = ['title', 'subject', 'description', 'time_limit_minutes', 'start_date', 'end_date', 'status',
                             'passing_percentage', 'max_attempts', 'show_answers_after_submission',
                             'randomize_questions', 'randomize_options', 'allow_review']
 
@@ -73,6 +73,44 @@ class QuizService:
             classes = Class.query.filter(
                 Class.id.in_(quiz_data['class_ids'])).all()
             quiz.classes = classes
+
+        # Update questions if provided
+        if 'questions' in quiz_data:
+            # Clear existing questions
+            QuizQuestion.query.filter_by(quiz_id=quiz_id).delete()
+
+            # Add new questions
+            for order_index, question_data in enumerate(quiz_data['questions'], 1):
+                if 'id' in question_data:
+                    # Use existing question
+                    question = Question.query.get(question_data['id'])
+                    if not question:
+                        continue  # Skip if question not found
+                else:
+                    # Create new question
+                    question = Question(
+                        text=question_data['text'],
+                        type=QuestionType(question_data['type']),
+                        topic=question_data.get('topic'),
+                        difficulty=Difficulty(question_data.get(
+                            'difficulty', 'medium')) if question_data.get('difficulty') else None,
+                        marks=question_data['marks'],
+                        created_by=teacher_id,
+                        options=question_data.get('options'),
+                        correct_answer=question_data.get('correct_answer'),
+                        sample_answer=question_data.get('sample_answer'),
+                        marking_rubric=question_data.get('marking_rubric')
+                    )
+                    db.session.add(question)
+                    db.session.flush()  # Get the question ID
+
+                # Link question to quiz
+                quiz_question = QuizQuestion(
+                    quiz_id=quiz_id,
+                    question_id=question.id,
+                    order_index=order_index
+                )
+                db.session.add(quiz_question)
 
         db.session.commit()
 

@@ -4,10 +4,11 @@ from app.services.attempt_reset_service import AttemptResetService
 from app.models.quiz_attempt import QuizAttempt
 from app.models.quiz import Quiz
 
-attempts_bp = Blueprint('attempts', __name__)
+# Use a different blueprint name to avoid conflict with attempt_controller
+attempts_reset_bp = Blueprint('attempts_reset', __name__)
 
 
-@attempts_bp.route('/reset', methods=['POST'])
+@attempts_reset_bp.route('/reset', methods=['POST'])
 @teacher_required
 def reset_attempts(current_user):
     """Reset attempts for a student"""
@@ -34,7 +35,7 @@ def reset_attempts(current_user):
         return jsonify({'error': 'Failed to reset attempts', 'details': str(e)}), 500
 
 
-@attempts_bp.route('/history', methods=['GET'])
+@attempts_reset_bp.route('/history', methods=['GET'])
 @jwt_required_with_role()
 def get_history(current_user):
     """Get attempt history"""
@@ -52,7 +53,7 @@ def get_history(current_user):
     return jsonify(history), 200
 
 
-@attempts_bp.route('/available', methods=['GET'])
+@attempts_reset_bp.route('/available', methods=['GET'])
 @student_required
 def get_available(current_user):
     """Get available attempts for current student"""
@@ -94,7 +95,32 @@ def get_available(current_user):
     }), 200
 
 
-@attempts_bp.route('/quiz/<quiz_id>/categorized', methods=['GET'])
+@attempts_reset_bp.route('/quiz/<quiz_id>/reset', methods=['POST'])
+@teacher_required
+def reset_quiz_attempts(current_user, quiz_id):
+    """Reset attempts for all students in a quiz"""
+    data = request.get_json()
+
+    required_fields = ['additional_attempts', 'reason']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'{field} is required'}), 400
+
+    try:
+        result = AttemptResetService.reset_quiz_attempts(
+            quiz_id=quiz_id,
+            additional_attempts=data['additional_attempts'],
+            reset_by=current_user.id,
+            reason=data['reason']
+        )
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': 'Failed to reset quiz attempts', 'details': str(e)}), 500
+
+
+@attempts_reset_bp.route('/quiz/<quiz_id>/categorized', methods=['GET'])
 @teacher_required
 def get_categorized_attempts(current_user, quiz_id):
     """Get attempts categorized by submission type"""
@@ -102,7 +128,7 @@ def get_categorized_attempts(current_user, quiz_id):
     return jsonify(categorized), 200
 
 
-@attempts_bp.route('/summary', methods=['GET'])
+@attempts_reset_bp.route('/summary', methods=['GET'])
 @student_required
 def get_attempt_summary(current_user):
     """Get comprehensive attempt summary for current student"""

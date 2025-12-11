@@ -31,8 +31,21 @@ export default function QuizAnalytics() {
       }
 
       try {
-        // Fetch quiz details
-        const quizResponse = await apiService.getQuiz(quizId);
+        // Validate quiz ID before making request
+        if (!quizId || typeof quizId !== 'string' || quizId.trim() === '') {
+          throw new Error('Invalid quiz ID provided');
+        }
+
+        // Fetch quiz details using teacher-specific endpoint with fallback
+        let quizResponse;
+        try {
+          console.log('Attempting to fetch analytics quiz with ID:', quizId);
+          quizResponse = await apiService.getTeacherQuiz(quizId);
+        } catch (teacherError) {
+          console.warn('Teacher quiz endpoint failed, trying general endpoint:', teacherError);
+          // Fallback to general quiz endpoint
+          quizResponse = await apiService.getQuiz(quizId);
+        }
         setQuiz(quizResponse);
 
         // Fetch quiz attempts for analytics
@@ -215,7 +228,7 @@ export default function QuizAnalytics() {
       [''],
       ['Question Analysis'],
       ['Question', 'Type', 'Difficulty', 'Success Rate (%)', 'Total Responses'],
-      ...questionAnalysis.map(q => [
+      ...questionAnalysis.map((q: any) => [
         `Q${q.questionNumber}: ${q.text}`,
         q.type,
         q.difficulty,
@@ -449,7 +462,7 @@ export default function QuizAnalytics() {
 
             {/* Detailed Question Analysis */}
             <div className="space-y-4">
-              {questionAnalysis.map((q, index) => (
+              {questionAnalysis.map((q: any, index: number) => (
                 <div
                   key={index}
                   className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
@@ -514,7 +527,7 @@ export default function QuizAnalytics() {
                     <div>
                       <div className="text-sm text-gray-700 dark:text-gray-300 mb-2">Answer Distribution</div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {Object.entries(q.answerDistribution).map(([option, count]) => (
+                        {Object.entries(q.answerDistribution).map(([option, count]: [string, number]) => (
                           <div
                             key={option}
                             className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600"

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Bell, X, Check, AlertCircle, Info, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { apiService } from '../../lib/api';
 
 interface Notification {
   id: string;
@@ -25,20 +26,23 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
   // Fetch notifications
   useEffect(() => {
     fetchNotifications();
-    
+
     // Poll for new notifications every 30 seconds
     const interval = setInterval(fetchNotifications, 30000);
-    
+
     return () => clearInterval(interval);
   }, [userId]);
 
   const fetchNotifications = async () => {
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/notifications?user_id=${userId}`);
-      // const data = await response.json();
-      
-      // Mock data for now
+      const response = await apiService.getNotifications(false, 50);
+      const data = response as any;
+
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unread_count || 0);
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error);
+      // Fallback to mock data if API fails
       const mockNotifications: Notification[] = [
         {
           id: '1',
@@ -46,41 +50,20 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
           title: 'New Quiz Available',
           message: 'Mathematics Quiz - Chapter 1 is now available',
           link: '/student/quizzes',
-          is_read: false,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          type: 'success',
-          title: 'Quiz Graded',
-          message: 'Your Science Quiz has been graded. Score: 85%',
-          link: '/student/results',
-          is_read: false,
-          created_at: new Date(Date.now() - 3600000).toISOString()
-        },
-        {
-          id: '3',
-          type: 'warning',
-          title: 'Attempt Reset',
-          message: 'Your teacher has given you another chance for History Quiz',
-          link: '/student/quizzes',
           is_read: true,
           created_at: new Date(Date.now() - 7200000).toISOString()
         }
       ];
-      
+
       setNotifications(mockNotifications);
       setUnreadCount(mockNotifications.filter(n => !n.is_read).length);
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error);
     }
   };
 
   const markAsRead = async (notificationId: string) => {
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' });
-      
+      await apiService.markNotificationAsRead(notificationId);
+
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
       );
@@ -92,9 +75,8 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
 
   const markAllAsRead = async () => {
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/notifications/read-all`, { method: 'POST' });
-      
+      await apiService.markAllNotificationsAsRead();
+
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {
@@ -104,9 +86,8 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
 
   const deleteNotification = async (notificationId: string) => {
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/notifications/${notificationId}`, { method: 'DELETE' });
-      
+      await apiService.deleteNotification(notificationId);
+
       const notification = notifications.find(n => n.id === notificationId);
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
       if (notification && !notification.is_read) {
@@ -154,7 +135,7 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
       >
         <Bell className="w-6 h-6 text-gray-700 dark:text-gray-300" />
         {unreadCount > 0 && (
-          <Badge 
+          <Badge
             className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-1 bg-red-500 text-white"
           >
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -201,9 +182,8 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
                 notifications.map(notification => (
                   <div
                     key={notification.id}
-                    className={`p-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                      !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/10' : ''
-                    }`}
+                    className={`p-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${!notification.is_read ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                      }`}
                   >
                     <div className="flex gap-3">
                       {/* Icon */}

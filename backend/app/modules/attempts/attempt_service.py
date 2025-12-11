@@ -6,6 +6,7 @@
 from datetime import datetime
 from app import db
 from app.models.quiz_attempt import QuizAttempt, AttemptStatus
+from app.models.quiz import Quiz
 from app.models.violation import Violation, ViolationType
 from app.models.attempt_history import AttemptHistory
 from app.services.attempt_reset_service import AttemptResetService
@@ -14,7 +15,7 @@ from app.services.attempt_reset_service import AttemptResetService
 class AttemptService:
 
     @staticmethod
-    def get_attempt_by_id(attempt_id, user_id=None):
+    def get_attempt_by_id(attempt_id, user_id=None, include_answers=True):
         """Get attempt by ID with optional user verification"""
         attempt = QuizAttempt.query.get(attempt_id)
 
@@ -24,7 +25,13 @@ class AttemptService:
         if user_id and attempt.student_id != user_id:
             raise ValueError('Unauthorized to view this attempt')
 
-        return attempt
+        attempt_data = attempt.to_dict(include_answers=include_answers)
+        if attempt.quiz:
+            # Include full quiz payload so the client can render questions immediately
+            attempt_data['quiz'] = attempt.quiz.to_dict(
+                include_questions=True, include_classes=False)
+
+        return attempt_data
 
     @staticmethod
     def get_student_attempts(student_id, quiz_id=None, page=1, per_page=20):
@@ -49,6 +56,10 @@ class AttemptService:
     def get_quiz_attempts(quiz_id, teacher_id=None, page=1, per_page=20):
         """Get all attempts for a quiz with optional teacher verification"""
         query = QuizAttempt.query.filter_by(quiz_id=quiz_id)
+        if teacher_id:
+            quiz = Quiz.query.get(quiz_id)
+            if not quiz or quiz.created_by != teacher_id:
+                raise ValueError('Unauthorized to view attempts for this quiz')
 
         attempts = query.order_by(QuizAttempt.started_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
@@ -57,8 +68,40 @@ class AttemptService:
         attempts_data = []
         for attempt in attempts.items:
             data = attempt.to_dict(include_answers=True)
-            data['student'] = attempt.student.to_dict(
-            ) if attempt.student else None
+
+            student_dict = attempt.student.to_dict() if attempt.student else None
+            if student_dict:
+                data['student'] = student_dict
+                data['student_name'] = student_dict.get('name')
+                data['registration_number'] = student_dict.get(
+                    'registration_number')
+
+            quiz_dict = attempt.quiz.to_dict(
+                include_questions=False) if attempt.quiz else None
+            if quiz_dict:
+                data['quiz'] = quiz_dict
+                data['quiz_title'] = quiz_dict.get('title')
+                data['total_questions'] = quiz_dict.get('total_questions')
+
+            # Convenience fields for monitoring UI
+            data['current_question_number'] = (
+                attempt.current_question_index or 0) + 1
+            data['time_spent_seconds'] = None
+            if attempt.started_at and attempt.last_activity_at:
+                data['time_spent_seconds'] = int(
+                    (attempt.last_activity_at - attempt.started_at).total_seconds())
+
+            answered_count = 0
+            for ans in attempt.answers:
+                if ans.answer_text not in (None, '') or ans.answer_option is not None:
+                    answered_count += 1
+
+            data['answered_questions'] = answered_count
+            data['total_questions'] = data.get(
+                'total_questions') or answered_count
+            data['violations'] = len(
+                attempt.violations) if attempt.violations else 0
+
             attempts_data.append(data)
 
         return {
@@ -93,12 +136,24 @@ class AttemptService:
         attempt.total_violations += 1
 
         # Check if auto-submit should be triggered
-        if attempt.total_violations >= 5:  # Threshold for auto-submit
+        if attempt.total_violations >= 3:  # Threshold aligned with frontend warnings
             attempt.status = AttemptStatus.AUTO_SUBMITTED
             attempt.submitted_at = datetime.utcnow()
             attempt.auto_submitted_due_to_violations = True
 
-        db.session.commit()
+            # Compute scores using student service while keeping auto-submitted flag
+            try:
+                from app.modules.student.student_service import StudentService
+
+                StudentService.submit_quiz_attempt(
+                    attempt.student_id,
+                    attempt.id
+                )
+            except Exception:
+                db.session.rollback()
+                raise
+        else:
+            db.session.commit()
 
         return violation
 

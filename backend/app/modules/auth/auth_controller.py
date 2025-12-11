@@ -180,3 +180,30 @@ def change_password(current_user):
 
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+
+
+@auth_bp.route('/profile', methods=['GET'])
+@jwt_required_with_role()
+def get_profile(current_user):
+    """Get current user profile"""
+    user_data = current_user.to_dict()
+    return jsonify(user_data), 200
+
+
+@auth_bp.route('/profile', methods=['PUT'])
+@jwt_required_with_role()
+def update_profile(current_user):
+    """Update user profile"""
+    data = request.get_json()
+
+    try:
+        AuthService.update_profile(current_user.id, data)
+        return jsonify({'message': 'Profile updated successfully'}), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@auth_bp.route('/profile', methods=['OPTIONS'])
+def handle_profile_options():
+    """Handle OPTIONS request for profile endpoint"""
+    return '', 200

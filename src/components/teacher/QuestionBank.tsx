@@ -44,10 +44,28 @@ export default function QuestionBank() {
     const fetchQuestions = async () => {
       try {
         const response = await apiService.getQuestionBank();
-        if (response.data && Array.isArray(response.data)) {
+        console.log('QuestionBank page - Full response:', response);
+        console.log('QuestionBank page - Response type:', typeof response);
+        console.log('QuestionBank page - Response keys:', Object.keys(response || {}));
+
+        if ((response as any).questions && Array.isArray((response as any).questions)) {
+          console.log('QuestionBank page - Found questions in response.questions:', (response as any).questions);
+          console.log('QuestionBank page - Number of questions:', (response as any).questions.length);
+          setQuestions((response as any).questions);
+        } else if (response.data && Array.isArray(response.data)) {
+          console.log('QuestionBank page - Found questions in response.data:', response.data);
+          console.log('QuestionBank page - Number of questions:', response.data.length);
           setQuestions(response.data);
+        } else if (Array.isArray(response)) {
+          console.log('QuestionBank page - Response is directly array:', response);
+          console.log('QuestionBank page - Number of questions:', response.length);
+          setQuestions(response);
+        } else {
+          console.log('QuestionBank page - No questions found');
+          console.log('QuestionBank page - Response structure:', JSON.stringify(response, null, 2));
         }
       } catch (error) {
+        console.error('QuestionBank page - Error:', error);
         toast.error('Failed to load questions');
       } finally {
         setLoading(false);
@@ -107,23 +125,29 @@ export default function QuestionBank() {
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/questions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        },
-        body: JSON.stringify(newQuestion)
-      });
+      const response = await apiService.createQuestion(newQuestion);
+      console.log('Create question response:', response);
 
-      if (response.ok) {
-        const result = await response.json();
-        setQuestions([...questions, result.data]);
+      // Handle different response structures
+      let createdQuestion = null;
+      if (response.data) {
+        createdQuestion = response.data;
+      } else if (response.question) {
+        createdQuestion = response.question;
+      } else if (response.id) {
+        createdQuestion = response;
+      }
+
+      if (createdQuestion) {
+        setQuestions([...questions, createdQuestion]);
         toast.success('Question added to bank');
         resetForm();
         setShowCreateDialog(false);
+      } else {
+        toast.error('Failed to create question - invalid response');
       }
     } catch (error) {
+      console.error('Create question error:', error);
       toast.error('Failed to create question');
     }
   };
@@ -149,43 +173,48 @@ export default function QuestionBank() {
     };
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/questions/${selectedQuestion.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        },
-        body: JSON.stringify(updatedQuestion)
-      });
+      const response = await apiService.updateQuestion(selectedQuestion.id, updatedQuestion);
+      console.log('Update question response:', response);
 
-      if (response.ok) {
-        const result = await response.json();
-        setQuestions(questions.map(q => q.id === selectedQuestion.id ? result.data : q));
+      // Handle different response structures
+      let updatedQuestionData = null;
+      if (response.data) {
+        updatedQuestionData = response.data;
+      } else if (response.question) {
+        updatedQuestionData = response.question;
+      } else if (response.id) {
+        updatedQuestionData = response;
+      }
+
+      if (updatedQuestionData) {
+        setQuestions(questions.map(q => q.id === selectedQuestion.id ? updatedQuestionData : q));
         toast.success('Question updated');
         resetForm();
         setShowEditDialog(false);
+      } else {
+        toast.error('Failed to update question - invalid response');
       }
     } catch (error) {
+      console.error('Update question error:', error);
       toast.error('Failed to update question');
     }
   };
 
   const handleDelete = async () => {
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/questions/${selectedQuestion.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
+      const response = await apiService.deleteQuestion(selectedQuestion.id);
+      console.log('Delete question response:', response);
 
-      if (response.ok) {
+      if (response.success || response.status === 'success' || !response.error) {
         setQuestions(questions.filter(q => q.id !== selectedQuestion.id));
         toast.success('Question deleted');
         resetForm();
         setShowDeleteDialog(false);
+      } else {
+        toast.error('Failed to delete question');
       }
     } catch (error) {
+      console.error('Delete question error:', error);
       toast.error('Failed to delete question');
     }
   };

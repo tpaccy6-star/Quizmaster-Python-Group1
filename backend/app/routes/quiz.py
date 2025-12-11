@@ -129,3 +129,76 @@ def publish_quiz(current_user, quiz_id):
         'message': 'Quiz published successfully',
         'quiz': quiz.to_dict(include_classes=True)
     }), 200
+
+
+@quiz_bp.route('/questions', methods=['GET'])
+@teacher_required
+def get_question_bank(current_user):
+    """Get all questions for the question bank"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    difficulty = request.args.get('difficulty')
+    topic = request.args.get('topic')
+
+    query = Question.query.filter_by(created_by=current_user.id)
+
+    if difficulty:
+        try:
+            diff = Difficulty(difficulty)
+            query = query.filter_by(difficulty=diff)
+        except ValueError:
+            return jsonify({'error': 'Invalid difficulty'}), 400
+
+    if topic:
+        query = query.filter(Question.topic.ilike(f'%{topic}%'))
+
+    questions = query.order_by(Question.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    return jsonify({
+        'questions': [q.to_dict() for q in questions.items],
+        'total': questions.total,
+        'pages': questions.pages,
+        'current_page': page
+    }), 200
+
+
+@quiz_bp.route('/questions', methods=['POST'])
+@teacher_required
+def create_question(current_user):
+    """Create a new question in the question bank"""
+    data = request.get_json()
+
+    required_fields = ['type', 'text', 'topic', 'difficulty', 'marks']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'{field} is required'}), 400
+
+    try:
+        question = Question(
+            type=QuestionType(data['type']),
+            text=data['text'],
+            topic=data['topic'],
+            difficulty=Difficulty(data['difficulty']),
+            marks=data['marks'],
+            created_by=current_user.id
+        )
+
+        if data['type'] == 'mcq':
+            if 'options' not in data or 'correct_answer' not in data:
+                return jsonify({'error': 'MCQ questions require options and correct_answer'}), 400
+            question.options = data['options']
+            question.correct_answer = data['correct_answer']
+
+        db.session.add(question)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Question created successfully',
+            'question': question.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create question', 'details': str(e)}), 500

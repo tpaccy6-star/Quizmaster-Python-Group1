@@ -21,7 +21,8 @@ export default function StudentDashboard() {
     const fetchData = async () => {
       try {
         const response = await apiService.getStudentDashboard();
-        setDashboardData(response.data);
+        console.log('Dashboard response:', response);
+        setDashboardData(response); // API service returns data directly
       } catch (error) {
         toast.error('Failed to load dashboard');
       } finally {
@@ -35,7 +36,7 @@ export default function StudentDashboard() {
     setIsRefreshing(true);
     try {
       const response = await apiService.getStudentDashboard();
-      setDashboardData(response.data);
+      setDashboardData(response); // API service returns data directly
       toast.success('Data refreshed');
     } catch (error) {
       toast.error('Failed to refresh');
@@ -55,18 +56,64 @@ export default function StudentDashboard() {
   }
 
   // Use data from API response
-  const stats = dashboardData;
+  const stats = dashboardData?.stats || {};
+  const student = dashboardData?.student || {};
+  const classInfo = dashboardData?.class || {};
+  const availableQuizzes = dashboardData?.available_quizzes || [];
+  const recentAttempts = dashboardData?.recent_attempts || [];
 
-  // Subject Performance Data
-  const subjectPerformance = stats?.subject_performance || [
+  // Calculate additional stats from recent attempts if not provided by API
+  const calculatedStats = {
+    ...stats,
+    avg_score: stats.avg_score || (() => {
+      const gradedAttempts = recentAttempts.filter((a: any) => a.status === 'graded' && a.score !== null && a.score !== undefined);
+      if (gradedAttempts.length === 0) return 0;
+      const totalScore = gradedAttempts.reduce((sum: number, a: any) => {
+        const score = a.score ?? 0;
+        const totalMarks = a.total_marks || a.totalMarks || 0;
+        return sum + (totalMarks > 0 ? (score / totalMarks) * 100 : 0);
+      }, 0);
+      return Math.round(totalScore / gradedAttempts.length);
+    })(),
+    best_score: stats.best_score || (() => {
+      const gradedAttempts = recentAttempts.filter((a: any) => a.status === 'graded' && a.score !== null && a.score !== undefined);
+      if (gradedAttempts.length === 0) return 0;
+      return Math.max(...gradedAttempts.map((a: any) => {
+        const score = a.score ?? 0;
+        const totalMarks = a.total_marks || a.totalMarks || 0;
+        return totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
+      }));
+    })()
+  };
+
+  // Recent Activity - use recent_attempts from dashboardData, not stats
+  const recentActivity = recentAttempts.slice(0, 5).map((attempt: any) => {
+    // Handle both backend field names (quiz_id, total_marks, score, submitted_at) 
+    // and frontend field names (quizId, totalMarks, score, submittedAt)
+    const quizId = attempt.quiz_id || attempt.quizId;
+    const totalMarks = attempt.total_marks || attempt.totalMarks || 0;
+    const score = attempt.score ?? 0;
+    const submittedAt = attempt.submitted_at || attempt.submittedAt;
+
+    return {
+      id: attempt.id,
+      title: quizId ? `Quiz ${quizId.slice(0, 8)}...` : 'Unknown Quiz',
+      score: totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0,
+      date: submittedAt ? new Date(submittedAt).toLocaleDateString() : 'No date',
+      status: attempt.status || 'pending',
+    };
+  });
+
+  // Subject Performance Data (mock for now - should be calculated from real data)
+  const subjectPerformance = [
     { subject: 'Math', score: 85 },
     { subject: 'Science', score: 78 },
     { subject: 'History', score: 92 },
     { subject: 'Computer', score: 88 },
   ];
 
-  // Progress Over Time
-  const progressData = stats?.progress_data || [
+  // Progress Over Time (mock for now - should be calculated from real data)
+  const progressData = [
     { month: 'Aug', quizzes: 2, avgScore: 75 },
     { month: 'Sep', quizzes: 3, avgScore: 80 },
     { month: 'Oct', quizzes: 4, avgScore: 85 },
@@ -74,21 +121,12 @@ export default function StudentDashboard() {
     { month: 'Dec', quizzes: 3, avgScore: 88 },
   ];
 
-  // Difficulty Breakdown
+  // Difficulty Breakdown (mock for now - should be calculated from real data)
   const difficultyData = [
     { name: 'Easy', value: 45, color: '#10B981' },
     { name: 'Medium', value: 35, color: '#F59E0B' },
     { name: 'Hard', value: 20, color: '#EF4444' },
   ];
-
-  // Recent Activity
-  const recentActivity = (stats?.recent_attempts || []).slice(0, 5).map((attempt: any) => ({
-    id: attempt.id,
-    title: 'Quiz #' + attempt.quizId,
-    score: Math.round((attempt.score / attempt.totalMarks) * 100),
-    date: new Date(attempt.submittedAt).toLocaleDateString(),
-    status: attempt.status,
-  }));
 
   return (
     <DashboardLayout user={user} onLogout={logout}>
@@ -97,9 +135,18 @@ export default function StudentDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl text-gray-900 dark:text-white">Student Dashboard</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Welcome back, {user.name}
-            </p>
+            <div className="flex items-center gap-4 mt-2">
+              <p className="text-gray-600 dark:text-gray-400">
+                Welcome back, {user?.name || 'Student'}! Here's your learning progress
+              </p>
+              {classInfo && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-900/20 rounded-full">
+                  <span className="text-sm text-blue-700 dark:text-blue-300">
+                    {classInfo.name} - {classInfo.section}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
           <button
             onClick={handleRefresh}
@@ -117,7 +164,7 @@ export default function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Quizzes Taken</p>
-                <p className="text-2xl text-gray-900 dark:text-white mt-1">{stats?.total_quizzes || 0}</p>
+                <p className="text-2xl text-gray-900 dark:text-white mt-1">{calculatedStats?.total_attempts || 0}</p>
               </div>
               <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
                 <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -129,7 +176,7 @@ export default function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Completed</p>
-                <p className="text-2xl text-gray-900 dark:text-white mt-1">{stats?.completed_quizzes || 0}</p>
+                <p className="text-2xl text-gray-900 dark:text-white mt-1">{calculatedStats?.completed_attempts || 0}</p>
               </div>
               <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
@@ -141,7 +188,7 @@ export default function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Average Score</p>
-                <p className="text-2xl text-gray-900 dark:text-white mt-1">{stats?.avg_score || 0}%</p>
+                <p className="text-2xl text-gray-900 dark:text-white mt-1">{calculatedStats?.avg_score || 0}%</p>
               </div>
               <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
                 <BarChart3 className="w-6 h-6 text-purple-600 dark:text-purple-400" />
@@ -153,7 +200,7 @@ export default function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Best Score</p>
-                <p className="text-2xl text-gray-900 dark:text-white mt-1">{stats?.best_score || 0}%</p>
+                <p className="text-2xl text-gray-900 dark:text-white mt-1">{calculatedStats?.best_score || 0}%</p>
               </div>
               <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
                 <Trophy className="w-6 h-6 text-orange-600 dark:text-orange-400" />
@@ -226,7 +273,7 @@ export default function StudentDashboard() {
             <h2 className="text-lg text-gray-900 dark:text-white mb-4">Recent Activity</h2>
             <div className="space-y-3">
               {recentActivity.length > 0 ? (
-                recentActivity.map((activity) => (
+                recentActivity.map((activity: any) => (
                   <div
                     key={activity.id}
                     className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"

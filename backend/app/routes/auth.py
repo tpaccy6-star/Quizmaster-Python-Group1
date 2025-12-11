@@ -186,6 +186,22 @@ def get_current_user(current_user):
     return jsonify({'user': user_data}), 200
 
 
+@auth_bp.route('/profile', methods=['PUT'])
+@jwt_required_with_role()
+def update_profile(current_user):
+    """Update user profile"""
+    data = request.get_json()
+
+    if 'name' in data:
+        current_user.name = data['name']
+    if 'email' in data:
+        current_user.email = data['email']
+
+    db.session.commit()
+
+    return jsonify({'message': 'Profile updated successfully'}), 200
+
+
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
     """Request password reset"""

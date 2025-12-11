@@ -6,6 +6,7 @@
 from flask import Blueprint, request, jsonify
 from app.utils.decorators import teacher_required
 from app.modules.teacher.teacher_service import TeacherService
+from app.models.quiz import Quiz
 
 teacher_bp = Blueprint('teacher', __name__)
 
@@ -129,3 +130,27 @@ def remove_from_class(current_user, class_id):
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': 'Failed to remove from class', 'details': str(e)}), 500
+
+
+@teacher_bp.route('/quizzes/<quiz_id>', methods=['GET'])
+@teacher_required
+def get_teacher_quiz(current_user, quiz_id):
+    """Get a specific quiz for teacher"""
+    try:
+        include_questions = request.args.get(
+            'include_questions', 'false').lower() == 'true'
+
+        quiz = Quiz.query.get(quiz_id)
+
+        if not quiz:
+            return jsonify({'error': 'Quiz not found'}), 404
+
+        if quiz.created_by != current_user.id:
+            return jsonify({'error': 'Access denied'}), 403
+
+        return jsonify({
+            'quiz': quiz.to_dict(include_questions=include_questions, include_classes=True)
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch quiz', 'details': str(e)}), 500

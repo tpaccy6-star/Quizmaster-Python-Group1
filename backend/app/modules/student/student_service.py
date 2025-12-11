@@ -9,7 +9,9 @@ from app.models.student import Student
 from app.models.class_model import Class
 from app.models.quiz import Quiz, QuizStatus
 from app.models.quiz_attempt import QuizAttempt, AttemptStatus
+from app.models.quiz_question import QuizQuestion
 from app.services.attempt_reset_service import AttemptResetService
+from sqlalchemy import cast, String
 
 
 class StudentService:
@@ -25,17 +27,24 @@ class StudentService:
         # Get available quizzes
         available_quizzes = []
         if student.class_:
-            for class_obj in student.class_:
-                for quiz in class_obj.quizzes:
-                    if quiz.status == QuizStatus.PUBLISHED:
-                        # Check if student has attempts left
-                        remaining = AttemptResetService.get_student_available_attempts(
-                            student_id, quiz.id
-                        )
-                        if remaining > 0:
-                            quiz_data = quiz.to_dict()
-                            quiz_data['remaining_attempts'] = remaining
-                            available_quizzes.append(quiz_data)
+            for quiz in student.class_.quizzes:
+                if StudentService._is_published(quiz.status):
+                    # Check if student has attempts left
+                    remaining = AttemptResetService.get_student_available_attempts(
+                        student_id, quiz.id
+                    )
+                    if remaining > 0:
+                        availability_status = StudentService._quiz_availability_status(
+                            quiz)
+                        quiz_data = quiz.to_dict()
+                        quiz_data['remaining_attempts'] = remaining
+                        quiz_data['is_available_now'] = availability_status == 'open'
+                        quiz_data['availability_status'] = availability_status
+                        quiz_data['available_from'] = quiz.start_date.isoformat(
+                        ) if quiz.start_date else None
+                        quiz_data['available_until'] = quiz.end_date.isoformat(
+                        ) if quiz.end_date else None
+                        available_quizzes.append(quiz_data)
 
         # Get recent attempts
         recent_attempts = QuizAttempt.query.filter_by(
@@ -66,7 +75,8 @@ class StudentService:
             return {'quizzes': []}
 
         # Get published quizzes assigned to student's class
-        quizzes = Quiz.query.filter_by(status=QuizStatus.PUBLISHED).filter(
+        quizzes = Quiz.query.filter(
+            cast(Quiz.status, String).ilike('published'),
             Quiz.classes.any(id=student.class_id)
         ).all()
 
@@ -76,9 +86,18 @@ class StudentService:
                 student_id, quiz.id
             )
 
+            availability_status = StudentService._quiz_availability_status(
+                quiz)
+
             quiz_info = quiz.to_dict()
             quiz_info['remaining_attempts'] = remaining
             quiz_info['can_attempt'] = remaining > 0
+            quiz_info['is_available_now'] = availability_status == 'open'
+            quiz_info['availability_status'] = availability_status
+            quiz_info['available_from'] = quiz.start_date.isoformat(
+            ) if quiz.start_date else None
+            quiz_info['available_until'] = quiz.end_date.isoformat(
+            ) if quiz.end_date else None
 
             # Get latest attempt info
             latest_attempt = QuizAttempt.query.filter_by(
@@ -128,12 +147,18 @@ class StudentService:
             raise ValueError('Student or quiz not found')
 
         # Check if quiz is published
-        if quiz.status != QuizStatus.PUBLISHED:
+        if not StudentService._is_published(quiz.status):
             raise ValueError('Quiz is not available')
 
         # Check if student is enrolled
         if not student.class_ or quiz not in student.class_.quizzes:
             raise ValueError('Student not enrolled in this quiz')
+
+        availability_status = StudentService._quiz_availability_status(quiz)
+        if availability_status == 'upcoming':
+            raise ValueError('Quiz is not yet available')
+        if availability_status == 'closed':
+            raise ValueError('Quiz availability has ended')
 
         # Check attempts remaining
         remaining = AttemptResetService.get_student_available_attempts(
@@ -150,20 +175,91 @@ class StudentService:
         attempt_number = (last_attempt.attempt_number +
                           1) if last_attempt else 1
 
-        # Create attempt
+        # Compute total marks even if some question relationships are missing
+        total_marks = 0
+        for qq in quiz.questions:
+            marks = None
+            if hasattr(qq, 'marks_override') and qq.marks_override is not None:
+                marks = qq.marks_override
+            elif hasattr(qq, 'question') and qq.question is not None:
+                marks = getattr(qq.question, 'marks', None)
+
+            total_marks += marks or 0
+
         attempt = QuizAttempt(
             quiz_id=quiz_id,
             student_id=student_id,
             attempt_number=attempt_number,
             status=AttemptStatus.IN_PROGRESS,
-            total_marks=sum(
-                qq.marks_override or qq.question.marks for qq in quiz.questions)
+            total_marks=total_marks,
+            progress=0,
+            current_question_index=0,
+            last_activity_at=datetime.utcnow()
         )
 
         db.session.add(attempt)
         db.session.commit()
 
-        return attempt.to_dict(include_questions=True)
+        attempt_data = attempt.to_dict()
+        attempt_data['quiz'] = quiz.to_dict(include_questions=True)
+
+        return attempt_data
+
+    @staticmethod
+    def _is_published(status) -> bool:
+        """Helper to determine if a quiz status represents published."""
+        if isinstance(status, QuizStatus):
+            return status == QuizStatus.PUBLISHED
+        if hasattr(status, 'value'):
+            return str(status.value).lower() == 'published'
+        return str(status).lower() == 'published'
+
+    @staticmethod
+    def _quiz_availability_status(quiz) -> str:
+        """Return availability status for a quiz: 'open', 'upcoming', or 'closed'."""
+        now = StudentService._current_time_for_quiz(quiz)
+
+        start_date = quiz.start_date
+        end_date = quiz.end_date
+
+        if start_date and StudentService._compare_datetime(now, start_date) < 0:
+            return 'upcoming'
+        if end_date and StudentService._compare_datetime(now, end_date) > 0:
+            return 'closed'
+        return 'open'
+
+    @staticmethod
+    def _quiz_available_now(quiz) -> bool:
+        return StudentService._quiz_availability_status(quiz) == 'open'
+
+    @staticmethod
+    def _current_time_for_quiz(quiz) -> datetime:
+        """Return current time aligned with quiz datetime timezone (if provided)."""
+        references = [dt for dt in [
+            quiz.start_date, quiz.end_date] if dt is not None]
+        for ref in references:
+            if ref.tzinfo is not None and ref.tzinfo.utcoffset(ref) is not None:
+                return datetime.now(ref.tzinfo)
+        # Fallback: assume naive datetimes are stored in local server time
+        return datetime.now()
+
+    @staticmethod
+    def _compare_datetime(left: datetime, right: datetime) -> int:
+        """Compare datetimes handling naive vs aware values safely."""
+        left_cmp = left
+        right_cmp = right
+
+        if right_cmp.tzinfo is not None and right_cmp.tzinfo.utcoffset(right_cmp) is not None:
+            if left_cmp.tzinfo is None or left_cmp.tzinfo.utcoffset(left_cmp) is None:
+                left_cmp = left_cmp.replace(tzinfo=right_cmp.tzinfo)
+        elif left_cmp.tzinfo is not None and left_cmp.tzinfo.utcoffset(left_cmp) is not None:
+            right_cmp = right_cmp.replace(tzinfo=left_cmp.tzinfo)
+
+        if left_cmp < right_cmp:
+            return -1
+        if left_cmp > right_cmp:
+            return 1
+        return 0
 
     @staticmethod
     def submit_answer(student_id, attempt_id, question_id, answer_data):
@@ -207,6 +303,29 @@ class StudentService:
             answer.answer_option = answer_data
 
         answer.updated_at = datetime.utcnow()
+
+        # Update attempt progress metadata
+        total_questions = len(
+            attempt.quiz.questions) if attempt.quiz and attempt.quiz.questions else 0
+        answered_count = 0
+        for ans in attempt.answers:
+            if ans.answer_text not in (None, '') or ans.answer_option is not None:
+                answered_count += 1
+
+        if total_questions > 0:
+            attempt.progress = min(
+                100, int((answered_count / total_questions) * 100))
+
+        quiz_question = QuizQuestion.query.filter_by(
+            quiz_id=attempt.quiz_id,
+            question_id=question_id
+        ).first()
+
+        if quiz_question and quiz_question.order_index is not None:
+            attempt.current_question_index = quiz_question.order_index
+
+        attempt.last_activity_at = datetime.utcnow()
+
         db.session.commit()
 
         return answer.to_dict()
@@ -223,14 +342,14 @@ class StudentService:
             raise ValueError('Attempt not found')
 
         if attempt.status != AttemptStatus.IN_PROGRESS:
-            raise ValueError('Attempt already submitted')
+            return attempt.to_dict(include_answers=True)
 
         # Calculate score for MCQ questions
         total_score = 0
         for answer in attempt.answers:
             if answer.question.type == 'mcq' and answer.answer_option is not None:
                 if answer.answer_option == answer.question.correct_answer:
-                    marks = answer.quiz_question.marks_override or answer.question.marks
+                    marks = answer.question.marks
                     answer.marks_awarded = marks
                     total_score += marks
 
@@ -240,6 +359,8 @@ class StudentService:
         attempt.passed = attempt.percentage >= attempt.quiz.passing_percentage
         attempt.status = AttemptStatus.SUBMITTED
         attempt.submitted_at = datetime.utcnow()
+        attempt.progress = 100
+        attempt.last_activity_at = datetime.utcnow()
 
         # Check if all questions are MCQ (auto-grade)
         has_descriptive = any(

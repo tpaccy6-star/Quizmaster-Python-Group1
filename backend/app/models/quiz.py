@@ -61,6 +61,33 @@ class Quiz(db.Model):
     randomize_options = db.Column(db.Boolean, default=False)
     allow_review = db.Column(db.Boolean, default=True)
 
+    # Time Settings
+    allow_late_submissions = db.Column(db.Boolean, default=False)
+
+    # Attempt Settings
+    # highest, latest, average
+    retake_policy = db.Column(db.String(20), default='highest')
+    show_correct_answers = db.Column(db.Boolean, default=False)
+
+    # Security Settings
+    prevent_tab_switching = db.Column(db.Boolean, default=False)
+    require_fullscreen = db.Column(db.Boolean, default=False)
+    enable_camera_monitoring = db.Column(db.Boolean, default=False)
+
+    # Display Settings
+    show_questions_one_at_a_time = db.Column(db.Boolean, default=False)
+    show_progress_bar = db.Column(db.Boolean, default=True)
+
+    # Grading Settings
+    enable_auto_grading = db.Column(db.Boolean, default=True)
+    allow_partial_credit = db.Column(db.Boolean, default=True)
+
+    # Access Settings
+    password_protection = db.Column(db.Boolean, default=False)
+    quiz_password = db.Column(db.String(255))
+    allowed_ip_addresses = db.Column(db.Text)  # JSON array of IPs
+    require_access_code = db.Column(db.Boolean, default=True)
+
     # Relationships
     creator = db.relationship(
         'Teacher', back_populates='quizzes', foreign_keys=[created_by])
@@ -85,15 +112,59 @@ class Quiz(db.Model):
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+
+            # Basic Settings
             'passing_percentage': self.passing_percentage,
             'max_attempts': self.max_attempts,
             'show_answers_after_submission': self.show_answers_after_submission,
             'randomize_questions': self.randomize_questions,
             'randomize_options': self.randomize_options,
-            'allow_review': self.allow_review
+            'allow_review': self.allow_review,
+
+            # Time Settings
+            'allow_late_submissions': self.allow_late_submissions,
+
+            # Attempt Settings
+            'retake_policy': self.retake_policy,
+            'show_correct_answers': self.show_correct_answers,
+
+            # Security Settings
+            'prevent_tab_switching': self.prevent_tab_switching,
+            'require_fullscreen': self.require_fullscreen,
+            'enable_camera_monitoring': self.enable_camera_monitoring,
+
+            # Display Settings
+            'show_questions_one_at_a_time': self.show_questions_one_at_a_time,
+            'show_progress_bar': self.show_progress_bar,
+
+            # Grading Settings
+            'enable_auto_grading': self.enable_auto_grading,
+            'allow_partial_credit': self.allow_partial_credit,
+
+            # Access Settings
+            'password_protection': self.password_protection,
+            'quiz_password': self.quiz_password,
+            'allowed_ip_addresses': self.allowed_ip_addresses,
+            'require_access_code': self.require_access_code
         }
+
+        questions = list(self.questions or [])
+        data['total_questions'] = len(questions)
+
+        total_marks = 0
+        for qq in questions:
+            marks = None
+            if getattr(qq, 'marks_override', None) is not None:
+                marks = qq.marks_override
+            elif getattr(qq, 'question', None) is not None:
+                marks = getattr(qq.question, 'marks', None)
+            total_marks += marks or 0
+
+        data['total_marks'] = total_marks
+
         if include_questions:
-            data['questions'] = [qq.to_dict() for qq in self.questions]
+            data['questions'] = [qq.question.to_dict()
+                                 for qq in questions if getattr(qq, 'question', None)]
         if include_classes:
             data['classes'] = [c.to_dict() for c in self.classes]
             data['class_ids'] = [c.id for c in self.classes]

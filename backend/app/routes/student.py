@@ -1,55 +1,91 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
 from app.utils.decorators import student_required
 from app.models.quiz import Quiz, QuizStatus
 from app.models.quiz_attempt import QuizAttempt, AttemptStatus
 from app.models.student import Student
 from app.models.class_model import Class
+from app.models.user import UserRole
 from app.services.attempt_reset_service import AttemptResetService
 from app import db
+from sqlalchemy import cast, String
 
 student_bp = Blueprint('student', __name__)
 
 
 @student_bp.route('/dashboard', methods=['GET'])
-@student_required
-def get_dashboard(current_user):
+def get_dashboard():
     """Get student dashboard data"""
-    student = Student.query.get(current_user.id)
+    try:
+        # Verify JWT token
+        verify_jwt_in_request()
+        user_id = get_jwt_identity()
+        
+        # Get student record
+        student = Student.query.get(user_id)
+        if not student:
+            return jsonify({'error': 'Student profile not found'}), 404
+        
+        # Get available quizzes
+        available_quizzes = []
+        try:
+            # Fetch all published quizzes (case-insensitive, robust for Enum storage)
+            all_published_quizzes = Quiz.query.filter(
+                cast(Quiz.status, String).ilike('published')
+            ).all()
+            for quiz in all_published_quizzes:
+                quiz_data = quiz.to_dict()
+                quiz_data['remaining_attempts'] = quiz.max_attempts or 1
+                available_quizzes.append(quiz_data)
 
-    # Get available quizzes
-    available_quizzes = []
-    if student.class_:
-        for class_obj in student.class_:
-            for quiz in class_obj.quizzes:
-                if quiz.status == QuizStatus.PUBLISHED:
-                    # Check if student has attempts left
-                    remaining = AttemptResetService.get_student_available_attempts(
-                        current_user.id, quiz.id
-                    )
-                    if remaining > 0:
-                        quiz_data = quiz.to_dict()
-                        quiz_data['remaining_attempts'] = remaining
-                        available_quizzes.append(quiz_data)
+        except Exception as e:
+            print(f"Error getting available quizzes: {e}")
 
-    # Get recent attempts
-    recent_attempts = QuizAttempt.query.filter_by(
-        student_id=current_user.id
-    ).order_by(QuizAttempt.started_at.desc()).limit(10).all()
+        # Get recent attempts
+        recent_attempts = []
+        try:
+            recent_attempts = QuizAttempt.query.filter_by(
+                student_id=user_id
+            ).order_by(QuizAttempt.started_at.desc()).limit(10).all()
+        except Exception as e:
+            print(f"Error getting recent attempts: {e}")
 
-    return jsonify({
-        'student': student.to_dict(include_user=False),
-        'class': student.class_.to_dict() if student.class_ else None,
-        'available_quizzes': available_quizzes,
-        'recent_attempts': [a.to_dict() for a in recent_attempts],
-        'stats': {
-            'total_attempts': QuizAttempt.query.filter_by(student_id=current_user.id).count(),
-            'completed_attempts': QuizAttempt.query.filter_by(
-                student_id=current_user.id,
-                status=AttemptStatus.SUBMITTED
-            ).count(),
+        # Calculate stats
+        stats = {
+            'total_attempts': 0,
+            'completed_attempts': 0,
             'available_quizzes': len(available_quizzes)
         }
-    }), 200
+        try:
+            stats['total_attempts'] = QuizAttempt.query.filter_by(
+                student_id=user_id).count()
+            stats['completed_attempts'] = QuizAttempt.query.filter_by(
+                student_id=user_id,
+                status=AttemptStatus.SUBMITTED
+            ).count()
+        except Exception as e:
+            print(f"Error calculating stats: {e}")
+
+        return jsonify({
+            'student': student.to_dict(include_user=False),
+            'class': {
+                'id': student.class_.id,
+                'name': student.class_.name,
+                'section': student.class_.section,
+                'academic_year': student.class_.academic_year,
+                'teacher_count': len(student.class_.teachers) if student.class_.teachers else 0,
+                'student_count': len(student.class_.students) if student.class_.students else 0,
+                'teachers': [teacher.to_dict() for teacher in student.class_.teachers] if student.class_.teachers and hasattr(student.class_.teachers, '__iter__') else []
+            } if student.class_ else None,
+            'available_quizzes': available_quizzes,
+            'recent_attempts': [a.to_dict() for a in recent_attempts],
+            'stats': stats
+        }), 200
+    except Exception as e:
+        print(f"Dashboard error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to load dashboard', 'details': str(e)}), 500
 
 
 @student_bp.route('/quizzes', methods=['GET'])
@@ -61,8 +97,9 @@ def get_available_quizzes(current_user):
     if not student.class_:
         return jsonify({'quizzes': []}), 200
 
-    # Get published quizzes assigned to student's class
-    quizzes = Quiz.query.filter_by(status=QuizStatus.PUBLISHED).filter(
+    # Get published quizzes assigned to student's class (case-insensitive)
+    quizzes = Quiz.query.filter(
+        cast(Quiz.status, String).ilike('published'),
         Quiz.classes.any(id=student.class_id)
     ).all()
 

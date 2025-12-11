@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Dict, Any
+from uuid import uuid4
 from app import db
 from app.models.quiz_attempt import QuizAttempt
 from app.models.quiz import Quiz
@@ -45,7 +46,7 @@ class AttemptResetService:
         # Archive existing attempts to history
         for attempt in attempts:
             history = AttemptHistory(
-                id=attempt.id,
+                id=str(uuid4()),  # Generate new UUID to avoid duplicate key
                 quiz_id=attempt.quiz_id,
                 student_id=attempt.student_id,
                 attempt_number=attempt.attempt_number,
@@ -103,6 +104,56 @@ class AttemptResetService:
             'message': f'Successfully granted {additional_attempts} additional attempt(s) to {user.name}',
             'new_max_attempts': quiz.max_attempts + additional_attempts,
             'archived_attempts': len(attempts)
+        }
+
+    @staticmethod
+    def reset_quiz_attempts(
+        quiz_id: str,
+        additional_attempts: int,
+        reset_by: str,
+        reason: str
+    ) -> Dict[str, Any]:
+        """Reset attempts for every student who has attempted the quiz."""
+
+        quiz = Quiz.query.get(quiz_id)
+        if not quiz:
+            raise ValueError('Quiz not found')
+
+        student_rows = db.session.query(QuizAttempt.student_id).filter_by(
+            quiz_id=quiz_id
+        ).distinct().all()
+
+        student_ids = [row[0] for row in student_rows]
+
+        if not student_ids:
+            return {
+                'success': False,
+                'message': 'No attempts found for this quiz to reset',
+                'processed_students': 0,
+                'quiz_title': quiz.title,
+                'details': []
+            }
+
+        processed = []
+        for student_id in student_ids:
+            result = AttemptResetService.reset_student_attempts(
+                student_id=student_id,
+                quiz_id=quiz_id,
+                additional_attempts=additional_attempts,
+                reset_by=reset_by,
+                reason=reason
+            )
+            processed.append({
+                'student_id': student_id,
+                'message': result.get('message')
+            })
+
+        return {
+            'success': True,
+            'message': f'Successfully reset attempts for {len(student_ids)} student(s)',
+            'processed_students': len(student_ids),
+            'quiz_title': quiz.title,
+            'details': processed
         }
 
     @staticmethod

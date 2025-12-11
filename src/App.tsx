@@ -21,59 +21,56 @@ import GradingDashboard from './components/teacher/GradingDashboard';
 import QuizMonitor from './components/teacher/QuizMonitor';
 import QuizAnalytics from './components/teacher/QuizAnalytics';
 import StudentDashboard from './components/student/StudentDashboard';
+import StudentQuizzes from './components/student/StudentQuizzes';
 import QuizAccess from './components/student/QuizAccess';
 import QuizTaking from './components/student/QuizTaking';
 import StudentResults from './components/student/StudentResults';
 import ResultDetail from './components/student/ResultDetail';
 import Profile from './components/shared/Profile';
 
-// Protected Route Component
-const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: string }> = ({
-  children,
-  requiredRole
-}) => {
-  const { currentUser, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (requiredRole && currentUser.role !== requiredRole) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <>{children}</>;
-};
-
-// Public Route Component (redirect if logged in)
-const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (currentUser) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <>{children}</>;
-};
-
 function AppRoutes() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
+
+  // Protected Route Component
+  const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: string }> = ({
+    children,
+    requiredRole
+  }) => {
+    if (isLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        </div>
+      );
+    }
+
+    if (!currentUser) {
+      return <Navigate to="/login" replace />;
+    }
+
+    if (requiredRole && currentUser.role !== requiredRole) {
+      return <Navigate to="/dashboard" replace />;
+    }
+
+    return <>{children}</>;
+  };
+
+  // Public Route Component (redirect if logged in)
+  const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    if (isLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        </div>
+      );
+    }
+
+    if (currentUser) {
+      return <Navigate to="/dashboard" replace />;
+    }
+
+    return <>{children}</>;
+  };
 
   return (
     <Routes>
@@ -170,6 +167,11 @@ function AppRoutes() {
       <Route path="/student/dashboard" element={
         <ProtectedRoute requiredRole="student">
           <StudentDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/student/quizzes" element={
+        <ProtectedRoute requiredRole="student">
+          <StudentQuizzes />
         </ProtectedRoute>
       } />
       <Route path="/student/quiz-access" element={

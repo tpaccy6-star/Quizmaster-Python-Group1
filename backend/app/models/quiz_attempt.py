@@ -41,6 +41,11 @@ class QuizAttempt(db.Model):
     total_violations = db.Column(db.Integer, default=0)
     auto_submitted_due_to_violations = db.Column(db.Boolean, default=False)
 
+    # Monitoring
+    progress = db.Column(db.Integer)
+    current_question_index = db.Column(db.Integer)
+    last_activity_at = db.Column(db.DateTime)
+
     # Browser info
     ip_address = db.Column(db.String(45))  # IPv6 support
     user_agent = db.Column(db.Text)
@@ -83,13 +88,17 @@ class QuizAttempt(db.Model):
             'passed': self.passed,
             'total_violations': self.total_violations,
             'auto_submitted_due_to_violations': self.auto_submitted_due_to_violations,
+            'progress': self.progress,
+            'current_question_index': self.current_question_index,
+            'last_activity_at': self.last_activity_at.isoformat() if self.last_activity_at else None,
             'ip_address': self.ip_address,
             'user_agent': self.user_agent,
             'is_reset': self.is_reset,
             'reset_by': self.reset_by,
             'reset_at': self.reset_at.isoformat() if self.reset_at else None,
             'reset_reason': self.reset_reason,
-            'additional_attempts_granted': self.additional_attempts_granted
+            'additional_attempts_granted': self.additional_attempts_granted,
+            'is_time_expired': self.is_time_expired()
         }
         if include_answers:
             data['answers'] = [a.to_dict() for a in self.answers]
@@ -97,3 +106,24 @@ class QuizAttempt(db.Model):
 
     def __repr__(self):
         return f'<QuizAttempt {self.quiz_id}:{self.student_id}:{self.attempt_number}>'
+
+    def is_time_expired(self):
+        """Check if the attempt has exceeded its time limit"""
+        if not self.started_at or not self.quiz:
+            return False
+
+        # Get time limit from quiz (check multiple possible fields)
+        time_limit = None
+        if hasattr(self.quiz, 'duration_minutes') and self.quiz.duration_minutes:
+            time_limit = self.quiz.duration_minutes
+        elif hasattr(self.quiz, 'time_limit_minutes') and self.quiz.time_limit_minutes:
+            time_limit = self.quiz.time_limit_minutes
+        elif hasattr(self.quiz, 'time_limit') and self.quiz.time_limit:
+            time_limit = self.quiz.time_limit
+
+        if not time_limit:
+            return False
+
+        # Calculate elapsed time in minutes
+        elapsed = (datetime.utcnow() - self.started_at).total_seconds() / 60
+        return elapsed > time_limit

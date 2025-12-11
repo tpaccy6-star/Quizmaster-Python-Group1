@@ -4,8 +4,11 @@
 # Handles HTTP requests for quiz endpoints
 
 from flask import Blueprint, request, jsonify
+from app import db
+from sqlalchemy.orm import joinedload
 from app.utils.decorators import jwt_required_with_role, teacher_required, student_required
 from app.modules.quiz.quiz_service import QuizService
+from app.models.quiz_question import QuizQuestion
 
 quiz_bp = Blueprint('quiz', __name__)
 
@@ -89,10 +92,12 @@ def create_quiz(current_user):
 def get_quiz(current_user, quiz_id):
     """Get a specific quiz"""
     try:
-        from app.models.quiz import Quiz
+        from app.models.quiz import Quiz, QuizStatus
         from app.models.user import UserRole
 
-        quiz = Quiz.query.get(quiz_id)
+        quiz = Quiz.query.options(
+            joinedload(Quiz.questions)
+        ).get(quiz_id)
 
         if not quiz:
             return jsonify({'error': 'Quiz not found'}), 404

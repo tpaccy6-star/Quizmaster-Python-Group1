@@ -13,6 +13,7 @@ import {
 } from '../ui/dialog';
 import { AlertCircle, RotateCcw, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiService } from '../../lib/api';
 
 interface AttemptResetProps {
   studentId: string;
@@ -47,25 +48,16 @@ export default function AttemptReset({
     setIsResetting(true);
 
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/attempts/reset`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({
-      //     student_id: studentId,
-      //     quiz_id: quizId,
-      //     additional_attempts: additionalAttempts,
-      //     reason: reason
-      //   })
-      // });
+      const response = await apiService.resetStudentAttempts(
+        studentId,
+        quizId,
+        additionalAttempts,
+        reason
+      );
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      toast.success(`Reset successful! ${studentName} can now attempt the quiz ${additionalAttempts} more time(s)`);
-
-      // Trigger notification to student
-      // This will be handled by the backend
+      const message = (response as any)?.message ||
+        `Reset successful! ${studentName} can now attempt the quiz ${additionalAttempts} more time(s)`;
+      toast.success(message);
 
       setIsOpen(false);
       setReason('');
@@ -73,7 +65,8 @@ export default function AttemptReset({
       onResetComplete();
     } catch (error) {
       console.error('Reset failed:', error);
-      toast.error('Failed to reset attempts. Please try again.');
+      const message = error instanceof Error ? error.message : 'Failed to reset attempts. Please try again.';
+      toast.error(message);
     } finally {
       setIsResetting(false);
     }
@@ -93,7 +86,7 @@ export default function AttemptReset({
       </Button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[400px] text-xs p-3">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RotateCcw className="w-5 h-5 text-blue-600" />

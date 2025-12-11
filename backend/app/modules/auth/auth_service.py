@@ -172,3 +172,19 @@ class AuthService:
 
         user.set_password(new_password)
         db.session.commit()
+
+    @staticmethod
+    def update_profile(user_id, data):
+        """Update user profile information"""
+        user = User.query.get(user_id)
+
+        if not user:
+            raise ValueError('User not found')
+
+        # Update allowed fields
+        allowed_fields = ['name', 'email', 'phone']
+        for field in allowed_fields:
+            if field in data:
+                setattr(user, field, data[field])
+
+        db.session.commit()

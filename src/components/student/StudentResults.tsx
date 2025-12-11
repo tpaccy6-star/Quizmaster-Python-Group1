@@ -13,6 +13,85 @@ export default function StudentResults() {
     return <div>Loading...</div>;
   }
 
+  // Format date helper function
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Not submitted';
+
+    try {
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) return 'Invalid date';
+
+      // Convert to Rwanda timezone (UTC+2)
+      const rwandaTime = new Date(date.getTime() + (2 * 60 * 60 * 1000)); // Add 2 hours
+
+      // Format: "Dec 10, 2025 at 2:46 PM"
+      return rwandaTime.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).replace(',', ' at');
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return 'Date error';
+    }
+  };
+
+  // Check if quiz has descriptive questions that need manual grading
+  const hasDescriptiveQuestions = (quiz: any) => {
+    if (!quiz || !quiz.questions) return false;
+    return quiz.questions.some((q: any) => q.type === 'short_answer' || q.type === 'descriptive');
+  };
+
+  // Get grading status based on quiz type and attempt status
+  const getGradingStatus = (attempt: any, quiz: any) => {
+    console.log('getGradingStatus - attempt:', attempt.status, 'quiz:', quiz);
+
+    // Create quiz with questions if needed
+    let quizWithQuestions = quiz;
+    if (!quiz?.questions || quiz.questions.length === 0) {
+      // Reconstruct questions from attempt answers
+      quizWithQuestions = {
+        ...quiz,
+        questions: attempt.answers.map((answer: any) => ({
+          id: answer.question_id,
+          type: answer.answer_option !== null ? 'mcq' : 'short_answer'
+        }))
+      };
+    }
+
+    console.log('getGradingStatus - hasDescriptiveQuestions:', hasDescriptiveQuestions(quizWithQuestions));
+
+    if (attempt.status === 'in_progress') return { status: 'In Progress', color: 'blue' as const };
+    if (attempt.status === 'submitted') {
+      if (hasDescriptiveQuestions(quizWithQuestions)) {
+        return { status: 'Pending Manual Grading', color: 'yellow' as const };
+      }
+      return { status: 'Auto-grading', color: 'blue' as const };
+    }
+    // Only show as "Graded" if there are no descriptive questions OR if score is manually set by teacher
+    if (attempt.status === 'graded') {
+      if (hasDescriptiveQuestions(quizWithQuestions)) {
+        // Check if score was manually set by teacher (not auto-graded)
+        if (attempt.score !== null && attempt.score !== undefined && attempt.teacher_graded === true) {
+          return { status: 'Graded', color: 'green' as const };
+        } else {
+          return { status: 'Pending Manual Grading', color: 'yellow' as const };
+        }
+      }
+      return { status: 'Graded', color: 'green' as const };
+    }
+    return { status: 'Not graded', color: 'gray' as const };
+  };
+
+  // Helper function to get quiz by ID
+  const getQuizById = (quizId: string) => {
+    return quizzes.find(quiz => quiz.id === quizId);
+  };
+
   const [attempts, setAttempts] = useState<any[]>([]);
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,19 +99,69 @@ export default function StudentResults() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log('StudentResults - Starting data fetch for user:', user.id);
+
         // Fetch student's quiz attempts
+        console.log('StudentResults - Fetching attempts...');
         const attemptsResponse = await apiService.getStudentAttempts(user.id);
+        console.log('StudentResults - Attempts response:', attemptsResponse);
+        console.log('StudentResults - Attempts response.data:', attemptsResponse.data);
+        console.log('StudentResults - Attempts response type:', typeof attemptsResponse);
+
         if (attemptsResponse.data && Array.isArray(attemptsResponse.data)) {
           setAttempts(attemptsResponse.data);
+          console.log('StudentResults - Set attempts:', attemptsResponse.data.length);
+        } else if ((attemptsResponse as any).items && Array.isArray((attemptsResponse as any).items)) {
+          // Handle paginated response
+          setAttempts((attemptsResponse as any).items);
+          console.log('StudentResults - Set attempts from paginated response:', (attemptsResponse as any).items.length);
+        } else if ((attemptsResponse as any).attempts && Array.isArray((attemptsResponse as any).attempts)) {
+          // Handle backend response structure
+          setAttempts((attemptsResponse as any).attempts);
+          console.log('StudentResults - Set attempts from backend response:', (attemptsResponse as any).attempts.length);
+          console.log('StudentResults - Sample attempt data:', JSON.stringify((attemptsResponse as any).attempts[0], null, 2));
+        } else {
+          console.warn('StudentResults - Unexpected attempts data structure:', attemptsResponse);
         }
 
         // Fetch quizzes for details
+        console.log('StudentResults - Fetching quizzes...');
         const quizzesResponse = await apiService.getQuizzes();
+        console.log('StudentResults - Quizzes response:', quizzesResponse);
+        console.log('StudentResults - Quizzes response.data:', quizzesResponse.data);
+        console.log('StudentResults - Quizzes response type:', typeof quizzesResponse);
+
         if (quizzesResponse.data && Array.isArray(quizzesResponse.data)) {
           setQuizzes(quizzesResponse.data);
+          console.log('StudentResults - Set quizzes:', quizzesResponse.data.length);
+        } else if ((quizzesResponse as any).items && Array.isArray((quizzesResponse as any).items)) {
+          // Handle paginated response
+          setQuizzes((quizzesResponse as any).items);
+          console.log('StudentResults - Set quizzes from paginated response:', (quizzesResponse as any).items.length);
+        } else if ((quizzesResponse as any).quizzes && Array.isArray((quizzesResponse as any).quizzes)) {
+          // Handle backend response structure
+          setQuizzes((quizzesResponse as any).quizzes);
+          console.log('StudentResults - Set quizzes from backend response:', (quizzesResponse as any).quizzes.length);
+          console.log('StudentResults - Sample quiz data:', JSON.stringify((quizzesResponse as any).quizzes[0], null, 2));
+        } else {
+          console.warn('StudentResults - Unexpected quizzes data structure:', quizzesResponse);
         }
       } catch (error) {
-        toast.error('Failed to load results');
+        console.error('StudentResults - Error loading data:', error);
+        console.error('StudentResults - User ID:', user.id);
+        console.error('StudentResults - Access token exists:', !!localStorage.getItem('accessToken'));
+
+        if (error instanceof Error) {
+          if (error.message.includes('Session expired')) {
+            toast.error('Session expired. Please login again.');
+          } else if (error.message.includes('Invalid token')) {
+            toast.error('Authentication error. Please login again.');
+          } else {
+            toast.error(`Failed to load results: ${error.message}`);
+          }
+        } else {
+          toast.error('Failed to load results');
+        }
       } finally {
         setLoading(false);
       }
@@ -50,11 +179,27 @@ export default function StudentResults() {
     );
   }
 
-  // Filter attempts for current student (should already be filtered by API)
-  const studentAttempts = attempts;
+  // Filter attempts for current student and show only latest attempt per quiz
+  const studentAttempts = attempts.reduce((latest: any[], attempt) => {
+    const existingIndex = latest.findIndex(a => a.quiz_id === attempt.quiz_id || a.quizId === attempt.quizId);
+    if (existingIndex === -1) {
+      latest.push(attempt);
+    } else {
+      // Keep the most recent attempt (by submitted_at or created_at)
+      const existing = latest[existingIndex];
+      const existingDate = new Date(existing.submitted_at || existing.submittedAt || existing.created_at || existing.createdAt);
+      const attemptDate = new Date(attempt.submitted_at || attempt.submittedAt || attempt.created_at || attempt.createdAt);
+      if (attemptDate > existingDate) {
+        latest[existingIndex] = attempt;
+      }
+    }
+    return latest;
+  }, []);
 
   const getQuizTitle = (quizId: string) => {
-    return quizzes.find(q => q.id === quizId)?.title || 'Unknown Quiz';
+    const quiz = quizzes.find(q => q.id === quizId);
+    console.log('StudentResults - getQuizTitle:', JSON.stringify({ quizId, quiz, quizzesLength: quizzes.length }, null, 2));
+    return quiz?.title || 'Unknown Quiz';
   };
 
   const handleExportCSV = () => {
@@ -65,24 +210,44 @@ export default function StudentResults() {
       [''],
       ['Quiz Title', 'Score', 'Total Marks', 'Percentage (%)', 'Status', 'Violations', 'Submitted At'],
       ...studentAttempts.map(attempt => {
-        const percentage = Math.round((attempt.score / attempt.totalMarks) * 100);
+        // Handle backend field names for CSV export
+        const score = attempt.score ?? null;
+        const totalMarks = attempt.total_marks || attempt.totalMarks || 0;
+        let percentage: number | null = 0;
+        if (score !== null && score !== undefined && totalMarks > 0) {
+          percentage = Math.round((score / totalMarks) * 100);
+        } else if (attempt.status !== 'graded' && (score === null || score === undefined)) {
+          percentage = null; // No percentage for in-progress attempts without scores
+        }
+        const submittedAt = attempt.submitted_at || attempt.submittedAt;
+        const violations = attempt.total_violations || attempt.violations || 0;
+        const quizId = attempt.quiz_id || attempt.quizId;
+
         return [
-          getQuizTitle(attempt.quizId),
-          attempt.score.toString(),
-          attempt.totalMarks.toString(),
-          percentage.toString(),
+          getQuizTitle(quizId),
+          score !== null && score !== undefined ? score.toString() : 'Not graded',
+          totalMarks.toString(),
+          percentage !== null ? percentage.toString() : 'N/A',
           attempt.status,
-          attempt.violations.toString(),
-          new Date(attempt.submittedAt).toLocaleString()
+          violations.toString(),
+          submittedAt ? new Date(submittedAt).toLocaleString() : 'Not submitted'
         ];
       }),
       [''],
       ['Summary'],
       ['Total Quizzes Taken:', studentAttempts.length.toString()],
       ['Graded:', studentAttempts.filter(a => a.status === 'graded').length.toString()],
+      ['In Progress:', studentAttempts.filter(a => a.status === 'in_progress').length.toString()],
       ['Pending:', studentAttempts.filter(a => a.status === 'pending').length.toString()],
       ['Average Score:', studentAttempts.length > 0
-        ? (studentAttempts.reduce((sum, a) => sum + (a.score / a.totalMarks) * 100, 0) / studentAttempts.length).toFixed(1) + '%'
+        ? (studentAttempts.reduce((sum, a) => {
+          const s = a.score ?? null;
+          const tm = a.total_marks || a.totalMarks || 0;
+          if (s !== null && s !== undefined && tm > 0) {
+            return sum + (s / tm) * 100;
+          }
+          return sum;
+        }, 0) / studentAttempts.filter(a => a.score !== null && a.score !== undefined).length || 0).toFixed(1) + '%'
         : 'N/A'
       ],
     ];
@@ -135,7 +300,24 @@ export default function StudentResults() {
         {studentAttempts.length > 0 ? (
           <div className="grid gap-6">
             {studentAttempts.map((attempt) => {
-              const percentage = Math.round((attempt.score / attempt.totalMarks) * 100);
+              console.log('StudentResults - Processing attempt:', JSON.stringify(attempt, null, 2));
+              // Handle backend field names
+              const score = attempt.score ?? null;
+              const totalMarks = attempt.total_marks || attempt.totalMarks || 0;
+
+              // Calculate percentage only for graded attempts or attempts with valid scores
+              let percentage: number | null = 0;
+              if (score !== null && score !== undefined && totalMarks > 0) {
+                percentage = Math.round((score / totalMarks) * 100);
+              } else if (attempt.status !== 'graded' && (score === null || score === undefined)) {
+                percentage = null; // No percentage for in-progress attempts without scores
+              }
+
+              const submittedAt = attempt.submitted_at || attempt.submittedAt;
+              const violations = attempt.total_violations || attempt.violations || 0;
+              const quizId = attempt.quiz_id || attempt.quizId;
+
+              console.log('StudentResults - Calculating percentage:', JSON.stringify({ score, totalMarks, percentage, quizId }, null, 2));
               return (
                 <div
                   key={attempt.id}
@@ -146,55 +328,79 @@ export default function StudentResults() {
                       <div className="flex items-center gap-2 mb-2">
                         <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         <h2 className="text-lg text-gray-900 dark:text-white">
-                          {getQuizTitle(attempt.quizId)}
+                          {getQuizTitle(quizId)}
                         </h2>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                         <div className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          <span>{new Date(attempt.submittedAt).toLocaleString()}</span>
+                          <span>{formatDate(submittedAt)}</span>
                         </div>
-                        {attempt.violations > 0 && (
+                        {violations > 0 && (
                           <div className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
                             <AlertCircle className="w-4 h-4" />
-                            <span>{attempt.violations} violation(s)</span>
+                            <span>{violations} violation(s)</span>
                           </div>
                         )}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-3xl text-gray-900 dark:text-white mb-1">
-                        {percentage}%
+                        {(() => {
+                          const gradingStatus = getGradingStatus(attempt, getQuizById(quizId));
+                          if (gradingStatus.status === 'Graded' && percentage !== null) {
+                            return `${percentage}%`;
+                          } else if (gradingStatus.status === 'Pending Manual Grading') {
+                            return 'Pending';
+                          } else {
+                            return 'N/A';
+                          }
+                        })()}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {attempt.score}/{attempt.totalMarks} marks
+                        {(() => {
+                          const gradingStatus = getGradingStatus(attempt, getQuizById(quizId));
+                          if (gradingStatus.status === 'Graded' && score !== null && score !== undefined) {
+                            return `${score}/${totalMarks} marks`;
+                          } else if (gradingStatus.status === 'Pending Manual Grading') {
+                            return 'Manual grading';
+                          } else {
+                            return gradingStatus.status;
+                          }
+                        })()}
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div>
-                      {attempt.status === 'graded' ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-sm">
-                          <CheckCircle className="w-4 h-4" />
-                          Graded
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-full text-sm">
-                          <Clock className="w-4 h-4" />
-                          Pending Review
-                        </span>
-                      )}
+                      {(() => {
+                        const gradingStatus = getGradingStatus(attempt, getQuizById(quizId));
+                        const colorClasses = {
+                          green: 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400',
+                          blue: 'bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+                          yellow: 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
+                          gray: 'bg-gray-100 dark:bg-gray-900/20 text-gray-600 dark:text-gray-400'
+                        };
+
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 ${colorClasses[gradingStatus.color]} rounded-full text-sm`}>
+                            {gradingStatus.color === 'green' && <CheckCircle className="w-4 h-4" />}
+                            {gradingStatus.color === 'blue' && <Clock className="w-4 h-4" />}
+                            {gradingStatus.color === 'yellow' && <AlertCircle className="w-4 h-4" />}
+                            {gradingStatus.color === 'gray' && <AlertCircle className="w-4 h-4" />}
+                            {gradingStatus.status}
+                          </span>
+                        );
+                      })()}
                     </div>
-                    {attempt.status === 'graded' && (
-                      <Link
-                        to={`/student/result/${attempt.id}`}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View Details
-                      </Link>
-                    )}
+                    <Link
+                      to={`/student/result/${attempt.id}`}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Details
+                    </Link>
                   </div>
                 </div>
               );

@@ -25,6 +25,7 @@ export interface ApiResponse<T = any> {
     message?: string;
     error?: string;
     details?: string;
+    regraded_attempts?: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -57,6 +58,34 @@ class ApiService {
 
         try {
             const response = await fetch(url, { ...options, headers });
+
+            // Handle 401 Unauthorized errors
+            if (response.status === 401) {
+                // Try to refresh token
+                try {
+                    await this.refreshToken();
+                    // Retry with new token
+                    const newHeaders = {
+                        'Content-Type': 'application/json',
+                        ...this.getAuthHeaders(),
+                        ...options.headers,
+                    };
+                    const retryResponse = await fetch(url, { ...options, headers: newHeaders });
+                    const data = await retryResponse.json();
+
+                    if (!retryResponse.ok) {
+                        throw new Error(data.error || data.details || 'Request failed');
+                    }
+                    return data;
+                } catch (refreshError) {
+                    // Refresh failed, clear tokens and redirect to login
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    window.location.href = '/login';
+                    throw new Error('Session expired. Please login again.');
+                }
+            }
+
             const data = await response.json();
 
             if (!response.ok) {
@@ -110,6 +139,13 @@ class ApiService {
 
     async getCurrentUser() {
         return this.request('/auth/me');
+    }
+
+    async updateUserProfile(userData: any) {
+        return this.request('/auth/profile', {
+            method: 'PUT',
+            body: JSON.stringify(userData),
+        });
     }
 
     async forgotPassword(email: string) {
@@ -238,6 +274,20 @@ class ApiService {
         return this.request(`/teacher/quizzes?${params}`);
     }
 
+    async getTeacherQuiz(quizId: string, includeQuestions = false) {
+        const params = new URLSearchParams({
+            include_questions: includeQuestions.toString(),
+        });
+
+        return this.request(`/teacher/quizzes/${quizId}?${params}`);
+    }
+
+    async regenerateQuizAccessCode(quizId: string) {
+        return this.request(`/teacher/quizzes/${quizId}/access-code`, {
+            method: 'POST',
+        });
+    }
+
     async getPendingGrading(page = 1, perPage = 20) {
         const params = new URLSearchParams({
             page: page.toString(),
@@ -275,6 +325,10 @@ class ApiService {
         });
 
         return this.request(`/student/results?${params}`);
+    }
+
+    async accessQuizByCode(accessCode: string) {
+        return this.request(`/quizzes/access/${accessCode}`);
     }
 
     async startQuiz(quizId: string) {
@@ -359,13 +413,26 @@ class ApiService {
         });
         if (difficulty) params.append('difficulty', difficulty);
 
-        return this.request(`/quiz/questions?${params}`);
+        return this.request(`/quizzes/questions?${params}`);
     }
 
     async createQuestion(questionData: any) {
-        return this.request('/quiz/questions', {
+        return this.request('/quizzes/questions', {
             method: 'POST',
             body: JSON.stringify(questionData),
+        });
+    }
+
+    async updateQuestion(questionId: string, questionData: any) {
+        return this.request(`/quizzes/questions/${questionId}`, {
+            method: 'PUT',
+            body: JSON.stringify(questionData),
+        });
+    }
+
+    async deleteQuestion(questionId: string) {
+        return this.request(`/quizzes/questions/${questionId}`, {
+            method: 'DELETE',
         });
     }
 
@@ -394,6 +461,26 @@ class ApiService {
         return this.request(`/attempts/quiz/${quizId}?${params}`);
     }
 
+    async resetStudentAttempts(studentId: string, quizId: string, additionalAttempts: number, reason: string) {
+        return this.request(`/attempts/student/${studentId}/quiz/${quizId}/reset`, {
+            method: 'POST',
+            body: JSON.stringify({
+                additional_attempts: additionalAttempts,
+                reason
+            })
+        });
+    }
+
+    async resetQuizAttempts(quizId: string, additionalAttempts: number, reason: string) {
+        return this.request(`/attempts/quiz/${quizId}/reset`, {
+            method: 'POST',
+            body: JSON.stringify({
+                additional_attempts: additionalAttempts,
+                reason
+            })
+        });
+    }
+
     async recordViolation(attemptId: string, violationType: string, questionIndex?: number, extraData?: any) {
         return this.request(`/attempts/${attemptId}/violations`, {
             method: 'POST',
@@ -403,6 +490,36 @@ class ApiService {
                 extra_data: extraData,
             }),
         });
+    }
+
+    // Grading endpoints
+    async getPendingAttempts(page = 1, perPage = 20) {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: perPage.toString(),
+        });
+
+        return this.request(`/grading/pending?${params}`);
+    }
+
+    async getGradedAttempts(page = 1, perPage = 20) {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: perPage.toString(),
+        });
+
+        return this.request(`/grading/graded?${params}`);
+    }
+
+    async gradeAttempt(attemptId: string, grades: any[]) {
+        return this.request(`/grading/attempt/${attemptId}`, {
+            method: 'POST',
+            body: JSON.stringify({ grades }),
+        });
+    }
+
+    async getGradingStatistics() {
+        return this.request('/grading/statistics');
     }
 
     // Notification endpoints
@@ -431,6 +548,35 @@ class ApiService {
 
     async getUnreadCount() {
         return this.request('/notifications/unread-count');
+    }
+
+    async deleteNotification(notificationId: string) {
+        return this.request(`/notifications/${notificationId}`, {
+            method: 'DELETE'
+        });
+    }
+
+    // Anti-cheating endpoints
+    async verifyQuizAccessCode(attemptId: string, accessCode: string, deviceInfo: any) {
+        return this.request(`/attempts/${attemptId}/verify-access-code`, {
+            method: 'POST',
+            body: JSON.stringify({ accessCode, deviceInfo }),
+        });
+    }
+
+    async logViolation(attemptId: string, violation: { violation_type: string; timestamp: string; details?: any }) {
+        return this.request(`/attempts/${attemptId}/log-violation`, {
+            method: 'POST',
+            body: JSON.stringify(violation),
+        });
+    }
+
+    async getViolationReport(attemptId: string) {
+        return this.request(`/attempts/${attemptId}/violation-report`);
+    }
+
+    async getDeviceInfo(attemptId: string) {
+        return this.request(`/attempts/${attemptId}/device-info`);
     }
 }
 

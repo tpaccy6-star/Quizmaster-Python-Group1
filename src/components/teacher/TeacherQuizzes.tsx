@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../shared/DashboardLayout';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Edit, Trash2, BarChart3, Users, Clock, Search, Filter, FileText, Monitor } from 'lucide-react';
+import { Plus, Edit, Trash2, BarChart3, Users, Clock, Search, Filter, FileText, Monitor, Key } from 'lucide-react';
 import { apiService } from '../../lib/api';
 import { toast } from 'sonner';
 
@@ -17,24 +17,73 @@ export default function TeacherQuizzes() {
   const [searchTerm, setSearchTerm] = useState('');
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingCodeFor, setGeneratingCodeFor] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchQuizzes = async () => {
       try {
         const response = await apiService.getTeacherQuizzes();
+        console.log('Teacher quizzes response:', response);
         // Handle paginated response structure
         const quizzesData = (response as any).quizzes || (response as any).data || response || [];
+        console.log('Processed quizzes data:', quizzesData);
         setQuizzes(Array.isArray(quizzesData) ? quizzesData : []);
       } catch (error) {
         console.error('Failed to load quizzes:', error);
-        toast.error('Failed to load quizzes');
-        setQuizzes([]);
+        if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          // Fallback: try to get quizzes from dashboard data
+          console.log('Teacher quizzes failed, trying dashboard fallback...');
+          try {
+            const dashboardResponse = await apiService.getTeacherDashboard();
+            console.log('Dashboard fallback response:', dashboardResponse);
+            const dashboardQuizzes = (dashboardResponse as any).quizzes || (dashboardResponse as any).data?.quizzes || [];
+            console.log('Dashboard quizzes:', dashboardQuizzes);
+            setQuizzes(Array.isArray(dashboardQuizzes) ? dashboardQuizzes : []);
+            toast.info('Loaded quizzes from dashboard data');
+          } catch (dashboardError) {
+            console.error('Dashboard fallback also failed:', dashboardError);
+            toast.error('Network error - please check your connection and try refreshing the page');
+          }
+        } else {
+          toast.error('Failed to load quizzes');
+        }
       } finally {
         setLoading(false);
       }
     };
     fetchQuizzes();
   }, []);
+
+  const handleGenerateAccessCode = async (quizId: string, quizTitle: string) => {
+    try {
+      setGeneratingCodeFor(quizId);
+      const response = await apiService.regenerateQuizAccessCode(quizId);
+      const data = response as any;
+      const accessCode = data?.access_code || data?.data?.access_code;
+      if (!accessCode) {
+        toast.error('Unable to retrieve new access code');
+        return;
+      }
+
+      setQuizzes((prev) =>
+        prev.map((quiz) =>
+          quiz.id === quizId
+            ? {
+              ...quiz,
+              access_code: accessCode,
+            }
+            : quiz
+        )
+      );
+
+      toast.success(`New access code sent to students for "${quizTitle}"`);
+    } catch (error) {
+      console.error('Failed to generate access code:', error);
+      toast.error('Failed to generate access code');
+    } finally {
+      setGeneratingCodeFor(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -48,6 +97,7 @@ export default function TeacherQuizzes() {
 
   // Filter quizzes based on search and status
   const filteredQuizzes = quizzes.filter(quiz => {
+    console.log('Quiz object structure:', quiz, 'Keys:', Object.keys(quiz || {}));
     const matchesSearch = quiz.title.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filter === 'all' || quiz.status === filter;
     return matchesSearch && matchesFilter;
@@ -74,9 +124,18 @@ export default function TeacherQuizzes() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl text-gray-900 dark:text-white">My Quizzes</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Create and manage your quizzes
-            </p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-gray-600 dark:text-gray-400">
+                Create and manage your quizzes
+              </p>
+              <Link
+                to="/teacher/grading"
+                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 text-sm font-medium"
+              >
+                <FileText className="w-4 h-4" />
+                View Closed Quizzes
+              </Link>
+            </div>
           </div>
           <Link
             to="/teacher/quiz/new"
@@ -158,7 +217,7 @@ export default function TeacherQuizzes() {
                         {quiz.time_limit || 60} minutes
                       </span>
                       <span className="text-gray-600 dark:text-gray-400">
-                        {quiz.questions?.length || 0} questions
+                        {quiz.total_questions ?? 0} questions
                       </span>
                       <span className={`px-3 py-1 rounded-full text-sm ${quiz.status === 'published'
                         ? 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400'
@@ -195,8 +254,16 @@ export default function TeacherQuizzes() {
                     </Link>
                   )}
                   <button
+                    onClick={() => handleGenerateAccessCode(quiz.id, quiz.title)}
+                    disabled={generatingCodeFor === quiz.id}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg transition-colors text-sm ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Key className="w-4 h-4" />
+                    {generatingCodeFor === quiz.id ? 'Generating...' : 'Generate Access Code'}
+                  </button>
+                  <button
                     onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-colors text-sm ml-auto"
+                    className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-colors text-sm"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete

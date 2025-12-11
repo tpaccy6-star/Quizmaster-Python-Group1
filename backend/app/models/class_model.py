@@ -48,9 +48,9 @@ class Class(db.Model):
             'name': self.name,
             'section': self.section,
             'academic_year': self.academic_year,
-            'student_count': len(self.students),
-            'teacher_count': len(self.teachers),
-            'teachers': [teacher.to_dict() for teacher in self.teachers],
+            'student_count': len(self.students) if self.students else 0,
+            'teacher_count': len(self.teachers) if self.teachers else 0,
+            'teachers': [teacher.to_dict() for teacher in self.teachers] if self.teachers and hasattr(self.teachers, '__iter__') else [],
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None

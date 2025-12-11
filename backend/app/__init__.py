@@ -63,14 +63,17 @@ def create_app(config_name='development'):
     app.config['CACHE_TYPE'] = os.getenv('CACHE_TYPE', 'simple')
     app.config['CACHE_DEFAULT_TIMEOUT'] = 300
 
+    # Disable rate limiting for local development to avoid throttling the SPA
+    if app.config.get('ENV', 'production') == 'development' or app.config.get('DEBUG'):
+        app.config['RATELIMIT_ENABLED'] = False
+
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
     bcrypt.init_app(app)
-    cors.init_app(
-        app, origins=["http://localhost:3000", "http://localhost:5173"])
-    socketio.init_app(app, cors_allowed_origins="*")
+    cors.init_app(app, resources={r"/api/*": {"origins": "*"}})
+    socketio.init_app(app)
     mail.init_app(app)
     ma.init_app(app)
     limiter.init_app(app)
@@ -87,6 +90,7 @@ def create_app(config_name='development'):
 
     # Register routes blueprints
     from app.routes.teacher import teacher_bp as teacher_routes_bp
+    from app.routes.grading import grading_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
@@ -95,6 +99,7 @@ def create_app(config_name='development'):
     app.register_blueprint(quiz_bp, url_prefix='/api/quizzes')
     app.register_blueprint(notifications_bp, url_prefix='/api/notifications')
     app.register_blueprint(attempts_bp, url_prefix='/api/attempts')
+    app.register_blueprint(grading_bp, url_prefix='/api/grading')
 
     # Register routes with override (routes take precedence)
     app.register_blueprint(

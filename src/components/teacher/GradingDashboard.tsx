@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '../shared/DashboardLayout';
 import { useAuth } from '../../contexts/AuthContext';
-import { CheckCircle, Clock, Eye, Filter, Download, Printer } from 'lucide-react';
-import { quizAttempts, quizzes, students, teachers } from '../../lib/mockData';
+import { CheckCircle, Clock, Eye, Filter, Download, Printer, Loader2, RefreshCw } from 'lucide-react';
+import { apiService } from '../../lib/api';
 import GradingInterface from './GradingInterface';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
@@ -16,45 +16,120 @@ export default function GradingDashboard() {
   const [activeTab, setActiveTab] = useState<'pending' | 'reviewed'>('pending');
   const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
   const [filterQuiz, setFilterQuiz] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [pendingAttempts, setPendingAttempts] = useState<any[]>([]);
+  const [gradedAttempts, setGradedAttempts] = useState<any[]>([]);
+  const [quizzes, setQuizzes] = useState<any[]>([]);
 
-  // Get teacher's classes
-  const teacher = teachers.find(t => t.id === user.id);
-  const teacherClassIds = teacher?.classIds || [];
+  const normalizeAttempt = (attempt: any) => {
+    const quiz = attempt?.quiz ?? attempt?.quiz_details ?? attempt?.quizInfo ?? null;
+    const student = attempt?.student ?? attempt?.student_info ?? null;
 
-  // Filter attempts by teacher's students
-  const teacherAttempts = quizAttempts.filter(a => {
-    const student = students.find(s => s.id === a.studentId);
-    return student && teacherClassIds.includes(student.classId);
-  });
+    const rawScore = attempt?.score ?? attempt?.total_score ?? attempt?.obtained_score ?? null;
+    const rawTotalMarks = attempt?.totalMarks ?? attempt?.total_marks ?? quiz?.total_marks ?? quiz?.totalMarks ?? null;
+    const rawPercentage = attempt?.percentage ?? attempt?.percentage_score ?? attempt?.percent ?? null;
 
-  // Filter for pending attempts (only those with descriptive questions)
-  const pendingAttempts = teacherAttempts.filter(attempt => {
-    if (attempt.status !== 'pending') return false;
-    const quiz = quizzes.find(q => q.id === attempt.quizId);
-    const hasDescriptive = quiz?.questions.some(q => q.type === 'descriptive');
-    return hasDescriptive;
-  });
+    const score = typeof rawScore === 'string' ? Number(rawScore) : rawScore;
+    const totalMarks = typeof rawTotalMarks === 'string' ? Number(rawTotalMarks) : rawTotalMarks;
+    let percentage = typeof rawPercentage === 'string' ? Number(rawPercentage) : rawPercentage;
 
-  const reviewedAttempts = teacherAttempts.filter(a => a.status === 'graded');
+    if ((percentage === null || Number.isNaN(percentage)) && totalMarks) {
+      percentage = totalMarks > 0 && score != null ? (Number(score) / Number(totalMarks)) * 100 : null;
+    }
 
-  const getQuizTitle = (quizId: string) => {
-    return quizzes.find(q => q.id === quizId)?.title || 'Unknown Quiz';
+    const submittedAt = attempt?.submittedAt ?? attempt?.submitted_at ?? null;
+    const startedAt = attempt?.startedAt ?? attempt?.started_at ?? null;
+
+    const studentName = student?.name ?? student?.full_name ?? student?.fullName ?? attempt?.student_name ?? 'Unknown Student';
+    const registrationNumber = student?.registration_number ?? student?.registrationNumber ?? attempt?.registration_number ?? 'N/A';
+
+    return {
+      ...attempt,
+      quiz,
+      student,
+      score: score != null && !Number.isNaN(score) ? Number(score) : null,
+      totalMarks: totalMarks != null && !Number.isNaN(totalMarks) ? Number(totalMarks) : null,
+      percentage: percentage != null && !Number.isNaN(percentage) ? Number(percentage) : null,
+      submittedAt,
+      startedAt,
+      studentName,
+      registrationNumber,
+    };
   };
 
-  const getStudentName = (studentId: string) => {
-    return students.find(s => s.id === studentId)?.name || 'Unknown Student';
+  // Load data
+  useEffect(() => {
+    loadData();
+  }, [activeTab]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      if (activeTab === 'pending') {
+        const response = await apiService.getPendingAttempts();
+        const attempts = (response as any).attempts || [];
+        setPendingAttempts(attempts.map(normalizeAttempt));
+        const quizzesPayload = (response as any).quizzes || [];
+        if (Array.isArray(quizzesPayload) && quizzesPayload.length > 0) {
+          setQuizzes(quizzesPayload);
+        }
+      } else {
+        const response = await apiService.getGradedAttempts();
+        const attempts = (response as any).attempts || [];
+        setGradedAttempts(attempts.map(normalizeAttempt));
+        const quizzesPayload = (response as any).quizzes || [];
+        if (Array.isArray(quizzesPayload) && quizzesPayload.length > 0) {
+          setQuizzes(quizzesPayload);
+        }
+      }
+    } catch (error) {
+      toast.error('Failed to load attempts');
+      console.error('Error loading attempts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Refresh data when returning from grading
+  const handleGradingComplete = () => {
+    setSelectedAttempt(null);
+    loadData(); // Refresh the current tab
+  };
+
+  const getQuizTitle = (quiz: any) => quiz?.title || quiz?.quiz_title || 'Unknown Quiz';
+
+  const getStudentName = (attempt: any) => attempt.studentName || attempt.student?.name || 'Unknown Student';
+
+  const getStudentRegNo = (attempt: any) => attempt.registrationNumber || attempt.student?.registrationNumber || 'N/A';
+
+  const formatSubmittedAt = (attempt: any) => {
+    if (!attempt.submittedAt) {
+      return 'Pending submission';
+    }
+    const date = new Date(attempt.submittedAt);
+    return Number.isNaN(date.getTime()) ? 'Pending submission' : date.toLocaleString();
   };
 
   // Filter by quiz if selected
-  let attemptsToShow = activeTab === 'pending' ? pendingAttempts : reviewedAttempts;
-  if (filterQuiz !== 'all') {
-    attemptsToShow = attemptsToShow.filter(a => a.quizId === filterQuiz);
+  let attemptsToShow = activeTab === 'pending' ? pendingAttempts : gradedAttempts;
+  if (filterQuiz !== 'all' && filterQuiz) {
+    attemptsToShow = attemptsToShow.filter(a => a.quiz?.id === filterQuiz);
   }
 
   // Get unique quizzes for filter
-  const uniqueQuizzes = Array.from(new Set(teacherAttempts.map(a => a.quizId)))
-    .map(id => quizzes.find(q => q.id === id))
+  const attemptDerivedQuizzes = [...pendingAttempts, ...gradedAttempts]
+    .map(a => a.quiz)
     .filter(Boolean);
+
+  const allQuizzes = [...quizzes, ...attemptDerivedQuizzes];
+  const uniqueQuizzesMap = new Map<string, any>();
+  for (const quiz of allQuizzes) {
+    const id = quiz?.id;
+    if (id && !uniqueQuizzesMap.has(id)) {
+      uniqueQuizzesMap.set(id, quiz);
+    }
+  }
+  const uniqueQuizzes = Array.from(uniqueQuizzesMap.values());
 
   const handleExportCSV = () => {
     const csvData = [
@@ -65,18 +140,19 @@ export default function GradingDashboard() {
       [''],
       ['Quiz Title', 'Student Name', 'Registration Number', 'Submitted At', 'Status', 'Score', 'Total Marks', 'Percentage (%)'],
       ...attemptsToShow.map(attempt => {
-        const student = students.find(s => s.id === attempt.studentId);
-        const percentage = attempt.status === 'graded'
-          ? Math.round((attempt.score / attempt.totalMarks) * 100)
+        const score = attempt.score ?? 0;
+        const totalMarks = attempt.totalMarks ?? attempt.quiz?.total_marks ?? attempt.quiz?.totalMarks ?? 0;
+        const percentage = attempt.status === 'graded' && totalMarks
+          ? Math.round((score / totalMarks) * 100)
           : 'N/A';
         return [
-          getQuizTitle(attempt.quizId),
-          student?.name || 'Unknown',
-          student?.registrationNumber || 'N/A',
-          new Date(attempt.submittedAt).toLocaleString(),
+          getQuizTitle(attempt.quiz),
+          getStudentName(attempt),
+          getStudentRegNo(attempt),
+          formatSubmittedAt(attempt),
           attempt.status,
-          attempt.status === 'graded' ? attempt.score.toString() : 'Pending',
-          attempt.totalMarks.toString(),
+          attempt.status === 'graded' && attempt.score != null ? attempt.score.toString() : 'Pending',
+          totalMarks ? totalMarks.toString() : '0',
           percentage.toString()
         ];
       }),
@@ -84,7 +160,7 @@ export default function GradingDashboard() {
       ['Summary'],
       ['Total Submissions:', attemptsToShow.length.toString()],
       ['Pending:', pendingAttempts.length.toString()],
-      ['Reviewed:', reviewedAttempts.length.toString()],
+      ['Reviewed:', gradedAttempts.length.toString()],
     ];
 
     const csvContent = csvData.map(row => row.join(',')).join('\n');
@@ -102,13 +178,18 @@ export default function GradingDashboard() {
     toast.success('Print dialog opened');
   };
 
+  const handleRefresh = () => {
+    loadData();
+    toast.success('Data refreshed');
+  };
+
   if (selectedAttempt) {
     return (
       <DashboardLayout user={user} onLogout={logout}>
         <GradingInterface
           attempt={selectedAttempt}
-          onComplete={() => setSelectedAttempt(null)}
-          onBack={() => setSelectedAttempt(null)}
+          onComplete={handleGradingComplete}
+          onBack={handleGradingComplete}
         />
       </DashboardLayout>
     );
@@ -126,6 +207,13 @@ export default function GradingDashboard() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleRefresh}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors print:hidden"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors print:hidden"
@@ -159,6 +247,37 @@ export default function GradingDashboard() {
           </div>
         </div>
 
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-card rounded-xl p-6 border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Pending Review</p>
+                <p className="text-2xl font-bold text-yellow-600">{pendingAttempts.length}</p>
+              </div>
+              <Clock className="w-8 h-8 text-yellow-600 opacity-20" />
+            </div>
+          </div>
+          <div className="bg-card rounded-xl p-6 border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Graded</p>
+                <p className="text-2xl font-bold text-green-600">{gradedAttempts.length}</p>
+              </div>
+              <CheckCircle className="w-8 h-8 text-green-600 opacity-20" />
+            </div>
+          </div>
+          <div className="bg-card rounded-xl p-6 border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Submissions</p>
+                <p className="text-2xl font-bold">{pendingAttempts.length + gradedAttempts.length}</p>
+              </div>
+              <Eye className="w-8 h-8 text-primary opacity-20" />
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-4 border-b">
           <button
             onClick={() => setActiveTab('pending')}
@@ -176,68 +295,80 @@ export default function GradingDashboard() {
               : 'text-muted-foreground'
               }`}
           >
-            Reviewed ({reviewedAttempts.length})
+            Reviewed ({gradedAttempts.length})
           </button>
         </div>
 
         <div className="grid gap-4">
-          {attemptsToShow.map((attempt) => {
-            const quiz = quizzes.find(q => q.id === attempt.quizId);
-            const student = students.find(s => s.id === attempt.studentId);
-            const descriptiveCount = quiz?.questions.filter(q => q.type === 'descriptive').length || 0;
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Loading attempts...</span>
+            </div>
+          ) : attemptsToShow.length > 0 ? (
+            attemptsToShow.map((attempt) => {
+              const descriptiveCount = attempt.quiz?.questions?.filter((q: any) => q.type === 'descriptive').length || 0;
 
-            return (
-              <div
-                key={attempt.id}
-                className="bg-card rounded-xl p-6 border"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg mb-1">
-                      {getQuizTitle(attempt.quizId)}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      Student: {student?.name} ({student?.registrationNumber})
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Submitted: {new Date(attempt.submittedAt).toLocaleString()}
-                    </p>
-                    {descriptiveCount > 0 && (
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {descriptiveCount} descriptive question{descriptiveCount > 1 ? 's' : ''} to grade
+              return (
+                <div
+                  key={attempt.id}
+                  className="bg-card rounded-xl p-6 border"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg mb-1">
+                        {getQuizTitle(attempt.quiz)}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Student: {getStudentName(attempt)} ({getStudentRegNo(attempt)})
                       </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {activeTab === 'pending' ? (
-                      <span className="flex items-center gap-2 px-3 py-1 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-full text-sm">
-                        <Clock className="w-4 h-4" />
-                        Pending
-                      </span>
-                    ) : (
-                      <div className="text-right">
-                        <span className="flex items-center gap-2 px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-sm mb-2">
-                          <CheckCircle className="w-4 h-4" />
-                          Graded
-                        </span>
-                        <p className="text-sm text-muted-foreground">
-                          Score: {attempt.score}/{attempt.totalMarks} ({Math.round((attempt.score / attempt.totalMarks) * 100)}%)
+                      <p className="text-sm text-muted-foreground">
+                        Submitted: {formatSubmittedAt(attempt)}
+                      </p>
+                      {descriptiveCount > 0 && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {descriptiveCount} descriptive question{descriptiveCount > 1 ? 's' : ''} to grade
                         </p>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setSelectedAttempt(attempt)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm"
-                    >
-                      <Eye className="w-4 h-4" />
-                      {activeTab === 'pending' ? 'Grade Now' : 'View Grades'}
-                    </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {activeTab === 'pending' ? (
+                        <span className="flex items-center gap-2 px-3 py-1 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-full text-sm">
+                          <Clock className="w-4 h-4" />
+                          Pending
+                        </span>
+                      ) : (
+                        <div className="text-right">
+                          <span className="flex items-center gap-2 px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-sm mb-2">
+                            <CheckCircle className="w-4 h-4" />
+                            Graded
+                          </span>
+                          <p className="text-sm text-muted-foreground">
+                            {(() => {
+                              const score = attempt.score ?? 0;
+                              const totalMarks = attempt.totalMarks ?? attempt.quiz?.total_marks ?? attempt.quiz?.totalMarks ?? 0;
+                              if (!totalMarks) {
+                                return 'Score: Pending';
+                              }
+                              const percentage = Math.round((score / totalMarks) * 100);
+                              return `Score: ${score}/${totalMarks} (${percentage}%)`;
+                            })()}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setSelectedAttempt(attempt)}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm"
+                      >
+                        <Eye className="w-4 h-4" />
+                        {activeTab === 'pending' ? 'Grade Now' : 'View Grades'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-          {attemptsToShow.length === 0 && (
+              );
+            })
+          ) : (
             <div className="text-center py-12 text-muted-foreground bg-card rounded-lg border">
               {activeTab === 'pending' ? (
                 <div>

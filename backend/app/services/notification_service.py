@@ -25,6 +25,12 @@ NOTIFICATION_TEMPLATES = {
         "priority": "high",
         "category": "quiz"
     },
+    "quiz_access_code": {
+        "title": "New Access Code for {quiz_title}",
+        "message": "Use access code '{access_code}' to join the quiz '{quiz_title}'.",
+        "priority": "medium",
+        "category": "quiz"
+    },
     "attempt_graded": {
         "title": "Quiz Graded: {quiz_title}",
         "message": "Your submission for '{quiz_title}' has been graded. Score: {score}/{total_marks} ({percentage}%)",
@@ -94,7 +100,7 @@ class NotificationService:
             priority=priority,
             category=category,
             action_url=link,
-            metadata=metadata,
+            extra_data=metadata,
             expires_at=expires_at
         )
         db.session.add(notification)
@@ -129,7 +135,7 @@ class NotificationService:
                 action_url=template_data.get('link'),
                 priority=template['priority'],
                 category=template['category'],
-                metadata=template_data
+                extra_data=template_data
             )
             notifications.append(notification)
 
@@ -159,6 +165,32 @@ class NotificationService:
                     'link': '/student/quizzes'
                 }
             )
+
+    @staticmethod
+    def notify_quiz_access_code(quiz_title: str, access_code: str, class_ids: List[str]):
+        """Notify students with the access code for a quiz."""
+        if not class_ids:
+            return
+
+        from app.models.student import Student
+
+        students = db.session.query(Student).filter(
+            Student.class_id.in_(class_ids)
+        ).all()
+
+        student_ids = [s.id for s in students]
+        if not student_ids:
+            return
+
+        NotificationService.create_notifications_bulk(
+            user_ids=student_ids,
+            notification_type="quiz_access_code",
+            template_data={
+                'quiz_title': quiz_title,
+                'access_code': access_code,
+                'link': '/student/quiz-access'
+            }
+        )
 
     @staticmethod
     def notify_attempt_graded(student_id: str, quiz_title: str, score: float, total_marks: int, percentage: float):

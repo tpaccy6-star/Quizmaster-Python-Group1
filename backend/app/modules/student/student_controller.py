@@ -64,7 +64,8 @@ def start_quiz(current_user, quiz_id):
         attempt = StudentService.start_quiz_attempt(current_user.id, quiz_id)
         return jsonify({
             'message': 'Quiz attempt started',
-            'attempt': attempt
+            'attempt': attempt,
+            'attempt_id': attempt.get('id')
         }), 201
 
     except ValueError as e:

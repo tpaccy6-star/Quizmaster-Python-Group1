@@ -6,6 +6,10 @@
 from flask import Blueprint, request, jsonify
 from app.utils.decorators import jwt_required_with_role, teacher_required, student_required
 from app.modules.attempts.attempt_service import AttemptService
+from app.services.attempt_reset_service import AttemptResetService
+from app.modules.student.anti_cheating_service import AntiCheatService
+from app.models.quiz import Quiz
+from uuid import uuid4
 
 attempts_bp = Blueprint('attempts', __name__)
 
@@ -18,11 +22,22 @@ def get_attempt(current_user, attempt_id):
         # Students can only view their own attempts
         user_id = current_user.id if current_user.role.value == 'student' else None
 
-        attempt = AttemptService.get_attempt_by_id(attempt_id, user_id)
+        attempt = AttemptService.get_attempt_by_id(
+            attempt_id,
+            user_id=user_id,
+            include_answers=True
+        )
 
-        return jsonify({
-            'attempt': attempt.to_dict(include_answers=True)
-        }), 200
+        attempt_data = AttemptService.get_attempt_by_id(
+            attempt_id,
+            user_id=user_id,
+            include_answers=True
+        )
+
+        attempt_data['violations'] = AttemptService.get_attempt_violations(
+            attempt_id)
+
+        return jsonify({'attempt': attempt_data}), 200
 
     except ValueError as e:
         return jsonify({'error': str(e)}), 404
@@ -80,6 +95,79 @@ def get_quiz_attempts(current_user, quiz_id):
         return jsonify({'error': str(e)}), 403
     except Exception as e:
         return jsonify({'error': 'Failed to fetch attempts', 'details': str(e)}), 500
+
+
+@attempts_bp.route('/student/<student_id>/quiz/<quiz_id>/reset', methods=['POST'])
+@teacher_required
+def reset_student_attempts(current_user, student_id, quiz_id):
+    """Allow teacher to grant additional attempts to a specific student."""
+    try:
+        quiz = Quiz.query.get(quiz_id)
+        if not quiz:
+            return jsonify({'error': 'Quiz not found'}), 404
+
+        if quiz.created_by != current_user.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        data = request.get_json() or {}
+        additional_attempts = int(data.get('additional_attempts', 0))
+        reason = (data.get('reason') or '').strip()
+
+        if additional_attempts <= 0:
+            return jsonify({'error': 'additional_attempts must be greater than zero'}), 400
+        if not reason:
+            return jsonify({'error': 'reason is required'}), 400
+
+        result = AttemptResetService.reset_student_attempts(
+            student_id=student_id,
+            quiz_id=quiz_id,
+            additional_attempts=additional_attempts,
+            reset_by=current_user.id,
+            reason=reason
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': 'Failed to reset attempts', 'details': str(e)}), 500
+
+
+@attempts_bp.route('/quiz/<quiz_id>/reset', methods=['POST'])
+@teacher_required
+def reset_quiz_attempts(current_user, quiz_id):
+    """Allow teacher to reset attempts for all students on a quiz."""
+    try:
+        quiz = Quiz.query.get(quiz_id)
+        if not quiz:
+            return jsonify({'error': 'Quiz not found'}), 404
+
+        if quiz.created_by != current_user.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        data = request.get_json() or {}
+        additional_attempts = int(data.get('additional_attempts', 0))
+        reason = (data.get('reason') or '').strip()
+
+        if additional_attempts <= 0:
+            return jsonify({'error': 'additional_attempts must be greater than zero'}), 400
+        if not reason:
+            return jsonify({'error': 'reason is required'}), 400
+
+        result = AttemptResetService.reset_quiz_attempts(
+            quiz_id=quiz_id,
+            additional_attempts=additional_attempts,
+            reset_by=current_user.id,
+            reason=reason
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': 'Failed to reset attempts', 'details': str(e)}), 500
 
 
 @attempts_bp.route('/<attempt_id>/violations', methods=['GET'])
@@ -245,3 +333,86 @@ def auto_submit_expired(current_user):
 
     except Exception as e:
         return jsonify({'error': 'Failed to auto-submit attempts', 'details': str(e)}), 500
+
+
+# Anti-cheating routes
+@attempts_bp.route('/<attempt_id>/verify-access-code', methods=['POST'])
+@student_required
+def verify_access_code(current_user, attempt_id):
+    """Verify access code for quiz attempt"""
+    try:
+        data = request.get_json()
+        access_code = data.get('accessCode')
+        device_info = data.get('deviceInfo', {})
+
+        if not access_code:
+            return jsonify({'error': 'Access code is required'}), 400
+
+        # Verify attempt ownership
+        attempt = AttemptService.get_attempt_by_id(attempt_id, current_user.id)
+
+        result, status_code = AntiCheatService.verify_access_code(
+            attempt_id, access_code, device_info)
+        return jsonify(result), status_code
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to verify access code', 'details': str(e)}), 500
+
+
+@attempts_bp.route('/<attempt_id>/log-violation', methods=['POST'])
+@student_required
+def log_violation(current_user, attempt_id):
+    """Log cheating violation"""
+    try:
+        data = request.get_json()
+        violation_type = data.get('type')
+        details = data.get('details', {})
+
+        if not violation_type:
+            return jsonify({'error': 'Violation type is required'}), 400
+
+        # Verify attempt ownership
+        attempt = AttemptService.get_attempt_by_id(attempt_id, current_user.id)
+
+        result, status_code = AntiCheatService.log_violation(
+            attempt_id, violation_type, details)
+        return jsonify(result), status_code
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to log violation', 'details': str(e)}), 500
+
+
+@attempts_bp.route('/<attempt_id>/violation-report', methods=['GET'])
+@jwt_required_with_role()
+def get_violation_report(current_user, attempt_id):
+    """Get comprehensive violation report"""
+    try:
+        # Verify attempt ownership
+        attempt = AttemptService.get_attempt_by_id(attempt_id)
+
+        if current_user.role.value == 'student' and attempt.student_id != current_user.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        result, status_code = AntiCheatService.get_violation_report(attempt_id)
+        return jsonify(result), status_code
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to get violation report', 'details': str(e)}), 500
+
+
+@attempts_bp.route('/<attempt_id>/device-info', methods=['GET'])
+@jwt_required_with_role()
+def get_device_info(current_user, attempt_id):
+    """Get device information for attempt"""
+    try:
+        # Verify attempt ownership
+        attempt = AttemptService.get_attempt_by_id(attempt_id)
+
+        if current_user.role.value == 'student' and attempt.student_id != current_user.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        result, status_code = AntiCheatService.get_device_info(attempt_id)
+        return jsonify(result), status_code
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to get device info', 'details': str(e)}), 500
