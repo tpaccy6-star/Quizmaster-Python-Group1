@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from app import db
+from app import db, socketio
 from app.models.notification import Notification
 from app.models.notification_event import NotificationEvent
 from app.models.user import User
@@ -106,8 +106,8 @@ class NotificationService:
         db.session.add(notification)
         db.session.commit()
 
-        # TODO: Send real-time notification via WebSocket/SocketIO
-        # socketio.emit('new_notification', notification.to_dict(), room=user_id)
+        # Send real-time notification via WebSocket/SocketIO
+        socketio.emit('new_notification', notification.to_dict(), room=user_id)
 
         return notification
 
@@ -139,8 +139,12 @@ class NotificationService:
             )
             notifications.append(notification)
 
-        db.session.bulk_save_objects(notifications)
+        db.session.add_all(notifications)
         db.session.commit()
+
+        # Send real-time notifications via WebSocket/SocketIO
+        for notification in notifications:
+            socketio.emit('new_notification', notification.to_dict(), room=notification.user_id)
 
         return notifications
 
