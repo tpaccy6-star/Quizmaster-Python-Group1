@@ -131,15 +131,16 @@ def forgot_password():
         if not email:
             return jsonify({'error': 'Email is required'}), 400
 
-        token = AuthService.request_password_reset(email)
+        AuthService.request_password_reset(email)
 
         return jsonify({
-            'message': 'Password reset token sent to email',
-            'token': token  # Remove in production
+            'message': 'Password reset token sent to email'
         }), 200
 
     except ValueError as e:
         return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': 'Failed to send email. Please try again later.'}), 500
 
 
 @auth_bp.route('/reset-password', methods=['POST'])

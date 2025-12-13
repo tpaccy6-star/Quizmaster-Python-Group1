@@ -8,7 +8,8 @@ import random
 import string
 from datetime import datetime, timedelta
 from flask_jwt_extended import create_access_token, create_refresh_token
-from app import db
+from flask_mail import Message
+from app import db, mail
 from app.models.user import User, UserRole
 from app.models.teacher import Teacher
 from app.models.student import Student
@@ -147,7 +148,20 @@ class AuthService:
         db.session.add(reset_token)
         db.session.commit()
 
-        return token  # In production, send via email
+        # Send email with token
+        try:
+            msg = Message(
+                subject='Password Reset Token',
+                sender=None,  # Uses MAIL_USERNAME from config
+                recipients=[email],
+                body=f'Your password reset token is: {token}\n\nThis token will expire in 1 hour.'
+            )
+            mail.send(msg)
+        except Exception as e:
+            # Re-raise to be handled by controller, or log and suppress
+            raise Exception(f"Failed to send email: {str(e)}")
+
+        return token  # Kept for reference, but controller should not expose it
 
     @staticmethod
     def reset_password(token, new_password):
