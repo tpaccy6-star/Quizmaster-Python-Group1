@@ -318,6 +318,25 @@ export default function ResultDetail() {
             {/* Navigation */}
             <div className="flex justify-between items-center mb-6">
               <button
+                onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+                disabled={currentQuestionIndex === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </button>
+              <span className="text-gray-600 dark:text-gray-400">
+                Question {currentQuestionIndex + 1} of {quiz.questions.length}
+              </span>
+              <button
+                onClick={() => setCurrentQuestionIndex(Math.min(quiz.questions.length - 1, currentQuestionIndex + 1))}
+                disabled={currentQuestionIndex === quiz.questions.length - 1}
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
             onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
             disabled={currentQuestionIndex === 0}
             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -400,123 +419,150 @@ export default function ResultDetail() {
                 console.log('isCorrect:', isCorrect);
                 console.log('Should show X icon:', question.type === 'mcq' && isFullyGraded && !isCorrect);
 
-                return (
-                  <div
-                    key={question.id}
-                    className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${question.type === 'mcq'
-                        ? isFullyGraded
-                          ? isCorrect
-                            ? 'bg-green-100 dark:bg-green-900/20'
-                            : 'bg-red-100 dark:bg-red-900/20'
-                          : 'bg-blue-100 dark:bg-blue-900/20'
+            {(() => {
+              const question = quiz.questions[currentQuestionIndex];
+              const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
+
+              // Check if quiz is fully graded (all questions have actual grades)
+              const isFullyGraded = !quiz.questions.some((q: any) =>
+                q.type === 'descriptive' || q.type === 'short_answer'
+              ) || quiz.questions.every((q: any) => {
+                if (q.type === 'descriptive' || q.type === 'short_answer') {
+                  const answer = attempt.answers.find((a: any) => a.question_id === q.id);
+                  console.log(`Checking question ${q.id} (${q.type}):`, {
+                    answer: answer,
+                    marks_awarded: answer?.marks_awarded,
+                    graded_at: answer?.graded_at,
+                    attempt_status: attempt.status
+                  });
+                  return (attempt.status === 'graded' && answer && answer.marks_awarded !== null && answer.marks_awarded !== undefined) ||
+                    (attempt.status === 'graded' && !answer);
+                }
+                return true; // MCQ questions are auto-graded
+              });
+
+              // Only calculate isCorrect if fully graded
+              const isCorrect = isFullyGraded && question.type === 'mcq' && studentAnswer?.answer_option === question.correctAnswer;
+              const marksAwarded = question.type === 'mcq' && isCorrect ? (question.marks || 5) : (studentAnswer?.marks_awarded || 0);
+
+              return (
+                <div
+                  key={question.id}
+                  className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${question.type === 'mcq'
+                      ? isFullyGraded
+                        ? isCorrect
+                          ? 'bg-green-100 dark:bg-green-900/20'
+                          : 'bg-red-100 dark:bg-red-900/20'
                         : 'bg-blue-100 dark:bg-blue-900/20'
-                        }`}>
-                        {question.type === 'mcq' ? (
-                          isFullyGraded ? (
-                            isCorrect ? (
-                              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                            ) : (
-                              <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                            )
+                      : 'bg-blue-100 dark:bg-blue-900/20'
+                      }`}>
+                      {question.type === 'mcq' ? (
+                        isFullyGraded ? (
+                          isCorrect ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
                           ) : (
-                            <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                           )
                         ) : (
                           <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                        )}
-                      </div>
+                        )
+                      ) : (
+                        <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </div>
 
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
-                                {question.type === 'mcq' ? 'Multiple Choice' :
-                                  question.type === 'short_answer' ? 'Short Answer' :
-                                    question.type === 'descriptive' ? 'Descriptive' : 'Unknown'}
-                              </span>
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
-                                Q{currentQuestionIndex + 1}
-                              </span>
-                            </div>
-                            <h3 className="text-lg text-gray-900 dark:text-white mb-1">
-                              {question.question_text || question.text || question.question || question.content || `Question ${currentQuestionIndex + 1}`}
-                            </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              Maximum Marks: {question.marks}
-                            </p>
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                              {question.type === 'mcq' ? 'Multiple Choice' :
+                                question.type === 'short_answer' ? 'Short Answer' :
+                                  question.type === 'descriptive' ? 'Descriptive' : 'Unknown'}
+                            </span>
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
+                              Q{currentQuestionIndex + 1}
+                            </span>
                           </div>
-                          <div className="text-right ml-4">
-                            <div className="text-sm text-gray-600 dark:text-gray-400">Score</div>
-                            <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                              {marksAwarded}/{question.marks}
-                            </div>
+                          <h3 className="text-lg text-gray-900 dark:text-white mb-1">
+                            {question.question_text || question.text || question.question || question.content || `Question ${currentQuestionIndex + 1}`}
+                          </h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Maximum Marks: {question.marks}
+                          </p>
+                        </div>
+                        <div className="text-right ml-4">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">Score</div>
+                          <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {marksAwarded}/{question.marks}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Answer content based on question type */}
-                        {question.type === 'mcq' && question.options && (
-                          <div className="space-y-2 mb-4">
-                            {question.options.map((option: any, optIndex: number) => (
+                      {question.type === 'mcq' && question.options && (
+                        <div className="space-y-2 mb-4">
+                          {question.options.map((option: any, optIndex: number) => (
+                            <div
+                              key={optIndex}
+                              className={`p-3 rounded-lg border-2 ${isFullyGraded && optIndex === question.correctAnswer
+                                ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                                : optIndex === studentAnswer?.answer_option
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                  : 'border-gray-200 dark:border-gray-700'
+                                }`}
+                            >
+                              <span className="text-gray-900 dark:text-white">{option}</span>
+                              {isFullyGraded && optIndex === question.correctAnswer && (
+                                <span className="ml-2 text-sm text-green-600 dark:text-green-400">
+                                  (Correct Answer)
+                                </span>
+                              )}
+                              {optIndex === studentAnswer?.answer_option && (
+                                <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                                  (Your Answer)
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {(question.type === 'descriptive' || question.type === 'short_answer') && (
+                        <div className="space-y-4">
+                          <div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your Answer:</div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div
-                                key={optIndex}
-                                className={`p-3 rounded-lg border-2 ${isFullyGraded && optIndex === question.correctAnswer
-                                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                                  : optIndex === studentAnswer?.answer_option
-                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                    : 'border-gray-200 dark:border-gray-700'
-                                  }`}
-                              >
-                                <span className="text-gray-900 dark:text-white">{option}</span>
-                                {isFullyGraded && optIndex === question.correctAnswer && (
-                                  <span className="ml-2 text-sm text-green-600 dark:text-green-400">
-                                    (Correct Answer)
-                                  </span>
-                                )}
-                                {optIndex === studentAnswer?.answer_option && (
-                                  <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
-                                    (Your Answer)
-                                  </span>
-                                )}
-                              </div>
-                            ))}
+                                className="text-gray-900 dark:text-white"
+                                dangerouslySetInnerHTML={{
+                                  __html: studentAnswer?.answer_text
+                                    ? studentAnswer.answer_text
+                                      .replace(/<div>/g, '<br>')
+                                      .replace(/<\/div>/g, '')
+                                      .replace(/<br><br>/g, '<br>')
+                                    : 'No answer provided'
+                                }}
+                              />
+                            </div>
                           </div>
-                        )}
-
-                        {(question.type === 'descriptive' || question.type === 'short_answer') && (
-                          <div className="space-y-4">
+                          {studentAnswer?.feedback && (
                             <div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your Answer:</div>
-                              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                                <div
-                                  className="text-gray-900 dark:text-white"
-                                  dangerouslySetInnerHTML={{
-                                    __html: studentAnswer?.answer_text
-                                      ? studentAnswer.answer_text
-                                        .replace(/<div>/g, '<br>')
-                                        .replace(/<\/div>/g, '')
-                                        .replace(/<br><br>/g, '<br>')
-                                      : 'No answer provided'
-                                  }}
-                                />
+                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Teacher Feedback:</div>
+                              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <p className="text-gray-900 dark:text-white">{studentAnswer.feedback}</p>
                               </div>
                             </div>
-                            {studentAnswer?.feedback && (
-                              <div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Teacher Feedback:</div>
-                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                                  <p className="text-gray-900 dark:text-white">{studentAnswer.feedback}</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
+              );
+            })()}
                 )}
               </div>
             </div>
@@ -528,6 +574,44 @@ export default function ResultDetail() {
           /* All Questions View */
           <div className="space-y-6">
             {quiz.questions.map((question: any, index: number) => {
+              const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
+
+              // Check if quiz is fully graded (all questions have actual grades)
+              const isFullyGraded = !quiz.questions.some((q: any) =>
+                q.type === 'descriptive' || q.type === 'short_answer'
+              ) || quiz.questions.every((q: any) => {
+                if (q.type === 'descriptive' || q.type === 'short_answer') {
+                  const answer = attempt.answers.find((a: any) => a.question_id === q.id);
+                  console.log(`[All Questions] Checking question ${q.id} (${q.type}):`, {
+                    answer: answer,
+                    marks_awarded: answer?.marks_awarded,
+                    graded_at: answer?.graded_at,
+                    attempt_status: attempt.status
+                  });
+                  // For descriptive questions, consider them graded if:
+                  // 1. attempt status is 'graded' AND marks_awarded is not null, OR
+                  // 2. attempt status is 'graded' AND there's no descriptive questions (auto-graded only)
+                  return (attempt.status === 'graded' && answer && answer.marks_awarded !== null && answer.marks_awarded !== undefined) ||
+                    (attempt.status === 'graded' && !answer);
+                }
+                return true; // MCQ questions are auto-graded
+              });
+
+              // Only calculate isCorrect if fully graded
+              const isCorrect = isFullyGraded && question.type === 'mcq' && studentAnswer?.answer_option === question.correctAnswer;
+              const marksAwarded = question.type === 'mcq' && isCorrect ? (question.marks || 5) : (studentAnswer?.marks_awarded || 0);
+
+              return (
+                <div
+                  key={question.id}
+                  className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${question.type === 'mcq'
+                      ? isFullyGraded
+                        ? isCorrect
+                          ? 'bg-green-100 dark:bg-green-900/20'
+                          : 'bg-red-100 dark:bg-red-900/20'
         const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
                 );
               })()}
@@ -576,110 +660,114 @@ export default function ResultDetail() {
                             : 'bg-red-100 dark:bg-red-900/20'
                           : 'bg-blue-100 dark:bg-blue-900/20'
                         : 'bg-blue-100 dark:bg-blue-900/20'
-                        }`}>
-                        {question.type === 'mcq' ? (
-                          isFullyGraded ? (
-                            isCorrect ? (
-                              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                            ) : (
-                              <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                            )
+                      : 'bg-blue-100 dark:bg-blue-900/20'
+                      }`}>
+                      {question.type === 'mcq' ? (
+                        isFullyGraded ? (
+                          isCorrect ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
                           ) : (
-                            <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                           )
                         ) : (
                           <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                        )}
-                      </div>
+                        )
+                      ) : (
+                        <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </div>
 
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
-                                {question.type === 'mcq' ? 'Multiple Choice' :
-                                  question.type === 'short_answer' ? 'Short Answer' :
-                                    question.type === 'descriptive' ? 'Descriptive' : 'Unknown'}
-                              </span>
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
-                                Q{index + 1}
-                              </span>
-                            </div>
-                            <h3 className="text-lg text-gray-900 dark:text-white mb-1">
-                              {question.question_text || question.text || question.question || question.content || `Question ${index + 1}`}
-                            </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              Maximum Marks: {question.marks}
-                            </p>
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                              {question.type === 'mcq' ? 'Multiple Choice' :
+                                question.type === 'short_answer' ? 'Short Answer' :
+                                  question.type === 'descriptive' ? 'Descriptive' : 'Unknown'}
+                            </span>
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
+                              Q{index + 1}
+                            </span>
                           </div>
-                          <div className="text-right ml-4">
-                            <div className="text-sm text-gray-600 dark:text-gray-400">Score</div>
-                            <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                              {marksAwarded}/{question.marks}
-                            </div>
+                          <h3 className="text-lg text-gray-900 dark:text-white mb-1">
+                            {question.question_text || question.text || question.question || question.content || `Question ${index + 1}`}
+                          </h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Maximum Marks: {question.marks}
+                          </p>
+                        </div>
+                        <div className="text-right ml-4">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">Score</div>
+                          <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {marksAwarded}/{question.marks}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Answer content based on question type */}
-                        {question.type === 'mcq' && question.options && (
-                          <div className="space-y-2 mb-4">
-                            {question.options.map((option: any, optIndex: number) => (
+                      {question.type === 'mcq' && question.options && (
+                        <div className="space-y-2 mb-4">
+                          {question.options.map((option: any, optIndex: number) => (
+                            <div
+                              key={optIndex}
+                              className={`p-3 rounded-lg border-2 ${isFullyGraded && optIndex === question.correctAnswer
+                                ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                                : optIndex === studentAnswer?.answer_option
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                  : 'border-gray-200 dark:border-gray-700'
+                                }`}
+                            >
+                              <span className="text-gray-900 dark:text-white">{option}</span>
+                              {isFullyGraded && optIndex === question.correctAnswer && (
+                                <span className="ml-2 text-sm text-green-600 dark:text-green-400">
+                                  (Correct Answer)
+                                </span>
+                              )}
+                              {optIndex === studentAnswer?.answer_option && (
+                                <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                                  (Your Answer)
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {(question.type === 'descriptive' || question.type === 'short_answer') && (
+                        <div className="space-y-4">
+                          <div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your Answer:</div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div
-                                key={optIndex}
-                                className={`p-3 rounded-lg border-2 ${isFullyGraded && optIndex === question.correctAnswer
-                                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                                  : optIndex === studentAnswer?.answer_option
-                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                    : 'border-gray-200 dark:border-gray-700'
-                                  }`}
-                              >
-                                <span className="text-gray-900 dark:text-white">{option}</span>
-                                {isFullyGraded && optIndex === question.correctAnswer && (
-                                  <span className="ml-2 text-sm text-green-600 dark:text-green-400">
-                                    (Correct Answer)
-                                  </span>
-                                )}
-                                {optIndex === studentAnswer?.answer_option && (
-                                  <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
-                                    (Your Answer)
-                                  </span>
-                                )}
-                              </div>
-                            ))}
+                                className="text-gray-900 dark:text-white"
+                                dangerouslySetInnerHTML={{
+                                  __html: studentAnswer?.answer_text
+                                    ? studentAnswer.answer_text
+                                      .replace(/<div>/g, '<br>')
+                                      .replace(/<\/div>/g, '')
+                                      .replace(/<br><br>/g, '<br>')
+                                    : 'No answer provided'
+                                }}
+                              />
+                            </div>
                           </div>
-                        )}
-
-                        {(question.type === 'descriptive' || question.type === 'short_answer') && (
-                          <div className="space-y-4">
+                          {studentAnswer?.feedback && (
                             <div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Your Answer:</div>
-                              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                                <div
-                                  className="text-gray-900 dark:text-white"
-                                  dangerouslySetInnerHTML={{
-                                    __html: studentAnswer?.answer_text
-                                      ? studentAnswer.answer_text
-                                        .replace(/<div>/g, '<br>')
-                                        .replace(/<\/div>/g, '')
-                                        .replace(/<br><br>/g, '<br>')
-                                      : 'No answer provided'
-                                  }}
-                                />
+                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Teacher Feedback:</div>
+                              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <p className="text-gray-900 dark:text-white">{studentAnswer.feedback}</p>
                               </div>
                             </div>
-                            {studentAnswer?.feedback && (
-                              <div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Teacher Feedback:</div>
-                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                                  <p className="text-gray-900 dark:text-white">{studentAnswer.feedback}</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        )
                 )}
               </div>
             </div>
