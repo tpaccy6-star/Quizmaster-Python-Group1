@@ -313,6 +313,30 @@ export default function ResultDetail() {
 
       {/* Questions Display */}
       {quiz && quiz.questions && quiz.questions.length > 0 ? (
+        viewMode === 'single' ? (
+          <>
+            {/* Navigation */}
+            <div className="flex justify-between items-center mb-6">
+              <button
+            onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+            disabled={currentQuestionIndex === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+          <span className="text-gray-600 dark:text-gray-400">
+            Question {currentQuestionIndex + 1} of {quiz.questions.length}
+          </span>
+          <button
+            onClick={() => setCurrentQuestionIndex(Math.min(quiz.questions.length - 1, currentQuestionIndex + 1))}
+            disabled={currentQuestionIndex === quiz.questions.length - 1}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
         <>
           {viewMode === 'single' ? (
             <>
@@ -493,6 +517,18 @@ export default function ResultDetail() {
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+          </>
+        ) : (
+          /* All Questions View */
+          <div className="space-y-6">
+            {quiz.questions.map((question: any, index: number) => {
+        const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
                 );
               })()}
             </>
@@ -644,6 +680,21 @@ export default function ResultDetail() {
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+            })}
+          </div>
+        )
+      ) : (
+    <div className="text-center py-8">
+      <p className="text-gray-600 dark:text-gray-400">No questions available for this quiz.</p>
+    </div>
+  )
+}
+    </DashboardLayout >
                 );
               })}
             </>
