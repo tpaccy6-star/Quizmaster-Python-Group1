@@ -337,6 +337,87 @@ export default function ResultDetail() {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+            onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+            disabled={currentQuestionIndex === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+          <span className="text-gray-600 dark:text-gray-400">
+            Question {currentQuestionIndex + 1} of {quiz.questions.length}
+          </span>
+          <button
+            onClick={() => setCurrentQuestionIndex(Math.min(quiz.questions.length - 1, currentQuestionIndex + 1))}
+            disabled={currentQuestionIndex === quiz.questions.length - 1}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <>
+          {viewMode === 'single' ? (
+            <>
+              {/* Navigation */}
+              <div className="flex justify-between items-center mb-6">
+                <button
+                  onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+                  disabled={currentQuestionIndex === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </button>
+                <span className="text-gray-600 dark:text-gray-400">
+                  Question {currentQuestionIndex + 1} of {quiz.questions.length}
+                </span>
+                <button
+                  onClick={() => setCurrentQuestionIndex(Math.min(quiz.questions.length - 1, currentQuestionIndex + 1))}
+                  disabled={currentQuestionIndex === quiz.questions.length - 1}
+                  className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {(() => {
+                const question = quiz.questions[currentQuestionIndex];
+                const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
+
+                // Check if quiz is fully graded (all questions have actual grades)
+                const isFullyGraded = !quiz.questions.some((q: any) =>
+                  q.type === 'descriptive' || q.type === 'short_answer'
+                ) || quiz.questions.every((q: any) => {
+                  if (q.type === 'descriptive' || q.type === 'short_answer') {
+                    const answer = attempt.answers.find((a: any) => a.question_id === q.id);
+                    console.log(`Checking question ${q.id} (${q.type}):`, {
+                      answer: answer,
+                      marks_awarded: answer?.marks_awarded,
+                      graded_at: answer?.graded_at,
+                      attempt_status: attempt.status
+                    });
+                    // For descriptive questions, consider them graded if:
+                    // 1. attempt status is 'graded' AND marks_awarded is not null, OR
+                    // 2. attempt status is 'graded' AND there's no descriptive questions (auto-graded only)
+                    return (attempt.status === 'graded' && answer && answer.marks_awarded !== null && answer.marks_awarded !== undefined) ||
+                      (attempt.status === 'graded' && !answer);
+                  }
+                  return true; // MCQ questions are auto-graded
+                });
+
+                // Only calculate isCorrect if fully graded
+                const isCorrect = isFullyGraded && question.type === 'mcq' && studentAnswer?.answer_option === question.correctAnswer;
+                const marksAwarded = question.type === 'mcq' && isCorrect ? (question.marks || 5) : (studentAnswer?.marks_awarded || 0);
+
+                // Debug logging
+                console.log('Question:', question.id, 'type:', question.type);
+                console.log('Attempt status:', attempt.status);
+                console.log('Has descriptive questions:', quiz.questions.some((q: any) => q.type === 'descriptive' || q.type === 'short_answer'));
+                console.log('isFullyGraded:', isFullyGraded);
+                console.log('isCorrect:', isCorrect);
+                console.log('Should show X icon:', question.type === 'mcq' && isFullyGraded && !isCorrect);
 
             {(() => {
               const question = quiz.questions[currentQuestionIndex];
@@ -482,6 +563,12 @@ export default function ResultDetail() {
                 </div>
               );
             })()}
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
           </>
         ) : (
           /* All Questions View */
@@ -525,6 +612,53 @@ export default function ResultDetail() {
                         ? isCorrect
                           ? 'bg-green-100 dark:bg-green-900/20'
                           : 'bg-red-100 dark:bg-red-900/20'
+        const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
+                );
+              })()}
+            </>
+          ) : (
+            /* All Questions View */
+            <>
+              {quiz.questions.map((question: any, index: number) => {
+                const studentAnswer = attempt.answers.find((a: any) => a.question_id === question.id);
+
+                // Check if quiz is fully graded (all questions have actual grades)
+                const isFullyGraded = !quiz.questions.some((q: any) =>
+                  q.type === 'descriptive' || q.type === 'short_answer'
+                ) || quiz.questions.every((q: any) => {
+                  if (q.type === 'descriptive' || q.type === 'short_answer') {
+                    const answer = attempt.answers.find((a: any) => a.question_id === q.id);
+                    console.log(`[All Questions] Checking question ${q.id} (${q.type}):`, {
+                      answer: answer,
+                      marks_awarded: answer?.marks_awarded,
+                      graded_at: answer?.graded_at,
+                      attempt_status: attempt.status
+                    });
+                    // For descriptive questions, consider them graded if:
+                    // 1. attempt status is 'graded' AND marks_awarded is not null, OR
+                    // 2. attempt status is 'graded' AND there's no descriptive questions (auto-graded only)
+                    return (attempt.status === 'graded' && answer && answer.marks_awarded !== null && answer.marks_awarded !== undefined) ||
+                      (attempt.status === 'graded' && !answer);
+                  }
+                  return true; // MCQ questions are auto-graded
+                });
+
+                // Only calculate isCorrect if fully graded
+                const isCorrect = isFullyGraded && question.type === 'mcq' && studentAnswer?.answer_option === question.correctAnswer;
+                const marksAwarded = question.type === 'mcq' && isCorrect ? (question.marks || 5) : (studentAnswer?.marks_awarded || 0);
+
+                return (
+                  <div
+                    key={question.id}
+                    className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${question.type === 'mcq'
+                        ? isFullyGraded
+                          ? isCorrect
+                            ? 'bg-green-100 dark:bg-green-900/20'
+                            : 'bg-red-100 dark:bg-red-900/20'
+                          : 'bg-blue-100 dark:bg-blue-900/20'
                         : 'bg-blue-100 dark:bg-blue-900/20'
                       : 'bg-blue-100 dark:bg-blue-900/20'
                       }`}>
@@ -634,6 +768,26 @@ export default function ResultDetail() {
             })}
           </div>
         )
+                )}
+              </div>
+            </div>
+          </div>
+        );
+            })}
+          </div>
+        )
+      ) : (
+    <div className="text-center py-8">
+      <p className="text-gray-600 dark:text-gray-400">No questions available for this quiz.</p>
+    </div>
+  )
+}
+    </DashboardLayout >
+                );
+              })}
+            </>
+          )}
+        </>
       ) : (
         <div className="text-center py-8">
           <p className="text-gray-600 dark:text-gray-400">No questions available for this quiz.</p>
